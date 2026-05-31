@@ -1,0 +1,260 @@
+/* ===== Super Mölkky theme — navy (rgb .1/.2/.4) × white =====
+   Ported from the SwiftUI app's color scheme. Mobile-first; on wide
+   screens the .app-shell is centered as a pseudo-device frame. */
+
+:root {
+  --navy: rgb(26, 51, 102); /* Color(red:0.1, green:0.2, blue:0.4) */
+  --navy-2: rgb(51, 77, 128); /* Color(red:0.2, green:0.3, blue:0.5) */
+  --navy-dark: rgb(13, 26, 51);
+  --white: #ffffff;
+  --shell-max: 430px;
+
+  --c-blue: #2f6fe0;
+  --c-green: #2fa84f;
+  --c-orange: #e07b2f;
+  --c-purple: #8a4fd0;
+  --c-indigo: #4b3fd0;
+  --c-yellow: #ffd23f;
+  --c-red: #e23b3b;
+  --c-cyan: #46d6e0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans',
+    'Hiragino Kaku Gothic ProN', Meiryo, sans-serif;
+  color: var(--white);
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+input[type='text'],
+input[type='search'] {
+  font-family: inherit;
+  font-size: 16px; /* avoid iOS zoom-on-focus */
+}
+
+/* ----- layout shell ----- */
+.app-frame {
+  min-height: 100dvh;
+  background: linear-gradient(135deg, var(--navy), var(--navy-2));
+  display: flex;
+  justify-content: center;
+}
+
+.app-shell {
+  width: 100%;
+  max-width: var(--shell-max);
+  min-height: 100dvh;
+  position: relative;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* On wide screens, give the centered column a subtle device-frame edge. */
+@media (min-width: 600px) {
+  .app-shell {
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.35);
+  }
+}
+
+/* ----- generic page scaffold ----- */
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.page-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.page-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 1.25rem 0 0.5rem;
+}
+
+.section-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-align: center;
+  margin: 0.25rem 0;
+}
+
+/* ----- buttons ----- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 50px;
+  padding: 0.5rem 1rem;
+  border-radius: 10px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  transition: transform 0.08s ease;
+  width: 100%;
+}
+.btn:active {
+  transform: scale(0.95);
+}
+
+.btn-primary {
+  background: var(--navy);
+  color: var(--white);
+  border: 2px solid var(--white);
+}
+
+.btn-secondary {
+  background: var(--white);
+  color: var(--navy);
+}
+
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--white);
+  border: 2px solid var(--white);
+}
+
+.btn-danger {
+  color: var(--c-red);
+  background: transparent;
+  width: auto;
+  min-height: auto;
+}
+
+/* small inline buttons (e.g. nav bar actions) */
+.btn-inline {
+  width: auto;
+  min-height: auto;
+  padding: 0.35rem 0.75rem;
+  font-size: 1rem;
+  border-radius: 8px;
+}
+
+/* score pad / chip buttons */
+.chip {
+  min-height: 44px;
+  border-radius: 8px;
+  font-weight: 700;
+  background: var(--white);
+  color: var(--navy);
+  border: 2px solid var(--white);
+  padding: 0.4rem 0.8rem;
+  transition: transform 0.08s ease;
+}
+.chip:active {
+  transform: scale(0.95);
+}
+.chip.selected {
+  background: var(--navy);
+  color: var(--white);
+}
+
+/* ----- cards ----- */
+.card {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 0.9rem;
+}
+
+.card-white {
+  background: var(--white);
+  color: var(--navy);
+  border-radius: 12px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+/* ----- nav bar (top of each modal/page) ----- */
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 1rem;
+}
+.navbar .spacer {
+  flex: 1;
+}
+
+/* ----- text input ----- */
+.text-field {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: var(--white);
+  color: #111;
+}
+
+/* ----- utility ----- */
+.row {
+  display: flex;
+  gap: 0.6rem;
+}
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.muted {
+  opacity: 0.7;
+}
+.center {
+  text-align: center;
+}
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.pad {
+  padding: 0 1rem;
+}
+.gap-sm {
+  gap: 0.5rem;
+}
+
+/* hide scrollbars on horizontal strips but keep scroll */
+.scroll-x::-webkit-scrollbar {
+  height: 0;
+}
+
+/* ----- modal overlay + sheet (shared by all modals) ----- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  z-index: 100;
+}
+.sheet {
+  width: 100%;
+  max-width: var(--shell-max);
+  background: linear-gradient(135deg, var(--navy), var(--navy-2));
+  min-height: 100dvh;
+  overflow-y: auto;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
