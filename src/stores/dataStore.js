@@ -10,7 +10,7 @@ import {
   createThrowType,
 } from '../lib/models.js'
 import { getRecommendations } from '../lib/recommendations.js'
-import { serializeCsv, parseCsv } from '../lib/csv.js'
+import { serializeCsv, parseCsv, mergeUsers } from '../lib/csv.js'
 import { loadState, saveState, clearState } from '../lib/persistence.js'
 
 export const useDataStore = defineStore('data', {
@@ -162,11 +162,19 @@ export const useDataStore = defineStore('data', {
     exportCsv() {
       return serializeCsv(this.users)
     },
+    // Merge imported CSV into existing data (non-destructive). Returns stats.
     importCsv(text) {
       const imported = parseCsv(text)
-      this.users = imported
+      const { users, stats } = mergeUsers(this.users, imported)
+      this.users = users
       this.persist()
-      return imported.length
+      return stats
+    },
+    // Replace all users with the CSV contents (kept for an explicit overwrite).
+    replaceFromCsv(text) {
+      this.users = parseCsv(text)
+      this.persist()
+      return this.users.length
     },
   },
 })

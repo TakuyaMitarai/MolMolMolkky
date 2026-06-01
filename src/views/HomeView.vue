@@ -38,8 +38,8 @@ function onFile(e) {
   if (!file) return
   const reader = new FileReader()
   reader.onload = () => {
-    const count = store.importCsv(String(reader.result))
-    message.value = `${count}人分の戦績をインポートしました`
+    const { usersAdded, usersMerged, recordsAdded } = store.importCsv(String(reader.result))
+    message.value = `マージ完了: 新規${usersAdded}人 / 既存更新${usersMerged}人 / 記録${recordsAdded}件追加`
   }
   reader.readAsText(file)
   e.target.value = ''
@@ -69,8 +69,9 @@ function onFile(e) {
       <h2 class="section-title">データ (CSV)</h2>
       <div class="row pad">
         <button class="btn btn-ghost" @click="exportCsv">⬇️ エクスポート</button>
-        <button class="btn btn-ghost" @click="triggerImport">⬆️ インポート</button>
+        <button class="btn btn-ghost" @click="triggerImport">⬆️ インポート(マージ)</button>
       </div>
+      <p class="center muted small-note">インポートは既存データに差分を追加します（上書きしません）</p>
       <p v-if="message" class="center msg">{{ message }}</p>
       <input
         ref="fileInput"
@@ -143,5 +144,9 @@ function onFile(e) {
   margin-top: 0.75rem;
   font-size: 0.9rem;
   opacity: 0.85;
+}
+.small-note {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
 }
 </style>

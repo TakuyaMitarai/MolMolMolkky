@@ -3,7 +3,7 @@
 // A user with no throws is written as one row with empty recordDate onward,
 // so registered-but-unused players survive an export/import round-trip.
 
-import { uuid } from './models.js'
+import { uuid, deepClone } from './models.js'
 
 const HEADER = [
   'name',
@@ -154,4 +154,49 @@ export function parseCsv(text) {
   }
 
   return order.map((nm) => byName.get(nm))
+}
+
+// Content-based identity for a throw record (ids are not stable across a
+// CSV export/import round-trip, so we dedupe by the meaningful fields).
+export function recordKey(r) {
+  return [r.date, r.throwTypeName, r.distance, r.score, r.isSuccessful, r.notes ?? ''].join('|')
+}
+
+/**
+ * Merge imported users into existing users (non-destructive):
+ *   - users matched by name; new users are appended
+ *   - throw records deduped by recordKey, only new ones added
+ *   - existing users absent from the import are kept untouched
+ * Returns { users, stats:{ usersAdded, usersMerged, recordsAdded } } (pure).
+ */
+export function mergeUsers(existingUsers, importedUsers) {
+  const users = deepClone(existingUsers)
+  const byName = new Map(users.map((u) => [u.name, u]))
+  let usersAdded = 0
+  let usersMerged = 0
+  let recordsAdded = 0
+
+  for (const iu of importedUsers) {
+    const existing = byName.get(iu.name)
+    if (!existing) {
+      const clone = deepClone(iu)
+      users.push(clone)
+      byName.set(clone.name, clone)
+      usersAdded += 1
+      recordsAdded += clone.throwRecords.length
+    } else {
+      usersMerged += 1
+      const keys = new Set(existing.throwRecords.map(recordKey))
+      for (const r of iu.throwRecords) {
+        const k = recordKey(r)
+        if (!keys.has(k)) {
+          existing.throwRecords.push(deepClone(r))
+          keys.add(k)
+          recordsAdded += 1
+        }
+      }
+    }
+  }
+
+  return { users, stats: { usersAdded, usersMerged, recordsAdded } }
 }
