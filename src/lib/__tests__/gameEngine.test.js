@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { recordScore, resetForNextGame, editTurn } from '../gameEngine.js'
-import { createGameRecord, createTeam, createPlayer } from '../models.js'
+import { recordScore, resetForNextGame, editTurn, reconcileStats } from '../gameEngine.js'
+import { createGameRecord, createTeam, createPlayer, createUser } from '../models.js'
 
 function twoTeamGame() {
   return createGameRecord([
@@ -86,6 +86,47 @@ describe('editTurn (fix ②)', () => {
     expect(ended).toBe(false)
     expect(game.isFinished).toBe(false)
     expect(game.winner).toBe(null)
+  })
+})
+
+describe('stats linkage (edit + undo)', () => {
+  function registeredTwoTeam() {
+    const u = createUser('登録花子')
+    return createGameRecord([
+      createTeam('A', [createPlayer('登録花子', { isRegistered: true, user: u })]),
+      createTeam('B', [createPlayer('b')]),
+    ])
+  }
+
+  it('editTurn reports a statUpdate when the turn is linked to a record', () => {
+    let g = registeredTwoTeam()
+    g = recordScore(g, 5).game
+    g.teams[0].turnHistory[0].throwRecordId = 'rec-1' // simulate a saved stats record
+    const { statUpdate } = editTurn(g, 0, 0, 9)
+    expect(statUpdate).toMatchObject({ recordId: 'rec-1', newScore: 9 })
+  })
+
+  it('editTurn returns null statUpdate for a turn with no linked record', () => {
+    let g = registeredTwoTeam()
+    g = recordScore(g, 5).game // no throwRecordId set
+    const { statUpdate } = editTurn(g, 0, 0, 9)
+    expect(statUpdate).toBe(null)
+  })
+
+  it('reconcileStats removes an added throw and reverts an edited score (by id only)', () => {
+    let g = registeredTwoTeam()
+    g = recordScore(g, 5).game
+    g.teams[0].turnHistory[0].throwRecordId = 'rec-1'
+    const before = JSON.parse(JSON.stringify(g)) // has 1 linked turn @ score 5
+    const after = recordScore(g, 3).game // B throws (no record) -> length grows for B only
+
+    // undo of B's throw: B turn has no throwRecordId -> no stats op
+    expect(reconcileStats(after, g)).toHaveLength(0)
+
+    // edit A's turn 5 -> 9, then reconcile back to `before`
+    const edited = editTurn(g, 0, 0, 9).game
+    const ops = reconcileStats(edited, before)
+    expect(ops).toEqual([{ type: 'setScore', userId: expect.any(String), recordId: 'rec-1', newScore: 5 }])
   })
 })
 

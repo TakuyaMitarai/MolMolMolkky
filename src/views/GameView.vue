@@ -7,7 +7,7 @@ import {
   selectPlayer as engineSelectPlayer,
   editTurn as engineEditTurn,
   resetForNextGame,
-  removedThrows,
+  reconcileStats,
   updateCumulativeScore,
 } from '../lib/gameEngine.js'
 import { createThrowRecord, deepClone } from '../lib/models.js'
@@ -116,28 +116,29 @@ function onDetailsSkip() {
 function applyThrow(score, details) {
   const player = currentPlayer.value
   const user = player?.user
-  const { game: next, ended, eliminatedName, teamChanged } = engineRecord(game.value, score)
+  const throwingTeamIndex = game.value.currentTeamIndex
+  const { game: next, ended, eliminatedName } = engineRecord(game.value, score)
   game.value = next
 
   // ThrowRecord (for stats) only when details were confirmed, registered player.
+  // Link it to the just-recorded turn so edits/undo can keep them in sync.
   if (details && user) {
-    store.addThrowRecord(
-      user,
-      createThrowRecord({
-        throwTypeName: details.throwTypeName,
-        distance: details.distance,
-        score,
-        isSuccessful: details.isSuccessful,
-        notes: details.notes,
-      })
-    )
+    const record = createThrowRecord({
+      throwTypeName: details.throwTypeName,
+      distance: details.distance,
+      score,
+      isSuccessful: details.isSuccessful,
+      notes: details.notes,
+    })
+    const lastTurn = next.teams[throwingTeamIndex].turnHistory.at(-1)
+    if (lastTurn) lastTurn.throwRecordId = record.id
+    store.addThrowRecord(user, record)
   }
 
-  if (teamChanged) {
-    snapshots.value.push(deepClone(game.value))
-    updateSwitchState()
-  }
+  // One snapshot per throw → undo reliably steps back one throw.
+  snapshots.value.push(deepClone(game.value))
   store.updateCurrentGame(game.value)
+  updateSwitchState()
 
   if (ended) {
     showEnd.value = true
@@ -155,8 +156,10 @@ function undo() {
   const popped = deepClone(snapshots.value[snapshots.value.length - 1])
   snapshots.value.pop()
   game.value = deepClone(snapshots.value[snapshots.value.length - 1])
-  for (const r of removedThrows(popped, game.value)) {
-    store.removeLastThrowRecord(r.user, r.score)
+  // roll back any stats changes (removed throws / undone edits) by record id
+  for (const op of reconcileStats(popped, game.value)) {
+    if (op.type === 'remove') store.removeThrowRecordById(op.userId, op.recordId)
+    else if (op.type === 'setScore') store.setThrowRecordScore(op.userId, op.recordId, op.newScore)
   }
   game.value.teams.forEach(updateCumulativeScore)
   store.updateCurrentGame(game.value)
@@ -179,10 +182,12 @@ function onCellClick(teamIndex, turnIndex) {
 }
 function onEditConfirm(newScore) {
   const { teamIndex, turnIndex } = editTarget.value
-  const { game: next, ended } = engineEditTurn(game.value, teamIndex, turnIndex, newScore)
+  const { game: next, ended, statUpdate } = engineEditTurn(game.value, teamIndex, turnIndex, newScore)
   game.value = next
-  // an edit rewrites history; restart the undo stack from the corrected state.
-  snapshots.value = [deepClone(game.value)]
+  // keep the linked stats record in sync with the edited score
+  if (statUpdate) store.setThrowRecordScore(statUpdate.userId, statUpdate.recordId, statUpdate.newScore)
+  // the edit is one undoable step (undo reverts the score via reconcileStats)
+  snapshots.value.push(deepClone(game.value))
   store.updateCurrentGame(game.value)
   showEditModal.value = false
   showEnd.value = ended

@@ -233,7 +233,7 @@ function recalcTeam(team) {
 export function editTurn(inputGame, teamIndex, turnIndex, newScore) {
   const game = deepClone(inputGame)
   const turn = game.teams[teamIndex]?.turnHistory[turnIndex]
-  if (!turn) return { game, ended: game.isFinished }
+  if (!turn) return { game, ended: game.isFinished, statUpdate: null }
 
   turn.score = newScore
   turn.isMiss = newScore === 0
@@ -266,7 +266,15 @@ export function editTurn(inputGame, teamIndex, turnIndex, newScore) {
     }
   }
 
-  return { game, ended }
+  // If this turn had a linked stats record (registered player, details saved),
+  // report the score change so the caller can update that record too.
+  let statUpdate = null
+  const player = game.teams[teamIndex].players[turn.playerIndex]
+  if (turn.throwRecordId && player?.user) {
+    statUpdate = { userId: player.user.id, recordId: turn.throwRecordId, newScore }
+  }
+
+  return { game, ended, statUpdate }
 }
 
 // Reset for the next game in a series (keeps gameResults & cumulativeScore).
@@ -288,19 +296,51 @@ export function resetForNextGame(inputGame, orderedTeams) {
   return game
 }
 
-// Given a popped (previous) snapshot and the restored one, list throw-record
-// removals to apply (registered players only). Mirrors the undo cleanup.
-export function removedThrows(poppedGame, restoredGame) {
-  const removals = []
-  poppedGame.teams.forEach((team, ti) => {
-    const restored = restoredGame.teams[ti]
-    if (team.turnHistory.length > restored.turnHistory.length) {
-      const deleted = team.turnHistory[team.turnHistory.length - 1]
-      const player = team.players[deleted.playerIndex]
-      if (player && player.user) {
-        removals.push({ user: player.user, score: deleted.score })
+/**
+ * Diff a popped snapshot against the restored one and return the stats
+ * operations needed to roll the User.throwRecords back. Only turns that carry
+ * a throwRecordId (registered player, details saved) produce operations —
+ * plain/guest throws are correctly left untouched.
+ *   - turns present only in popped (an undone throw) → 'remove'
+ *   - turns present in both with the same id but a different score (an undone
+ *     edit) → 'setScore' back to the restored value
+ */
+export function reconcileStats(poppedGame, restoredGame) {
+  const ops = []
+  poppedGame.teams.forEach((pT, ti) => {
+    const rT = restoredGame.teams[ti]
+    if (!rT) return
+
+    // removed throws
+    for (let k = rT.turnHistory.length; k < pT.turnHistory.length; k++) {
+      const turn = pT.turnHistory[k]
+      const player = pT.players[turn.playerIndex]
+      if (turn.throwRecordId && player?.user) {
+        ops.push({ type: 'remove', userId: player.user.id, recordId: turn.throwRecordId })
+      }
+    }
+
+    // edited throws (same id, different score)
+    const common = Math.min(pT.turnHistory.length, rT.turnHistory.length)
+    for (let k = 0; k < common; k++) {
+      const pTurn = pT.turnHistory[k]
+      const rTurn = rT.turnHistory[k]
+      if (
+        pTurn.throwRecordId &&
+        pTurn.throwRecordId === rTurn.throwRecordId &&
+        pTurn.score !== rTurn.score
+      ) {
+        const player = rT.players[rTurn.playerIndex]
+        if (player?.user) {
+          ops.push({
+            type: 'setScore',
+            userId: player.user.id,
+            recordId: rTurn.throwRecordId,
+            newScore: rTurn.score,
+          })
+        }
       }
     }
   })
-  return removals
+  return ops
 }

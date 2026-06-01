@@ -81,19 +81,21 @@ export const useDataStore = defineStore('data', {
         this.persist()
       }
     },
-    removeLastThrowRecord(user, score) {
-      const i = this.users.findIndex((u) => u.id === user.id)
+    // Remove a stats record by its id (used when an undo reverts a throw).
+    removeThrowRecordById(userId, recordId) {
+      const i = this.users.findIndex((u) => u.id === userId)
       if (i < 0) return
-      const records = this.users[i].throwRecords
-      let idx = -1
-      for (let k = records.length - 1; k >= 0; k--) {
-        if (records[k].score === score) {
-          idx = k
-          break
-        }
-      }
-      if (idx >= 0) records.splice(idx, 1)
-      else if (records.length) records.pop() // fallback: remove latest
+      this.users[i].throwRecords = this.users[i].throwRecords.filter((r) => r.id !== recordId)
+      this.persist()
+    },
+    // Update a stats record's score (used when a turn is edited / an edit is undone).
+    setThrowRecordScore(userId, recordId, newScore) {
+      const i = this.users.findIndex((u) => u.id === userId)
+      if (i < 0) return
+      const rec = this.users[i].throwRecords.find((r) => r.id === recordId)
+      if (!rec) return
+      rec.score = newScore
+      rec.isSuccessful = newScore !== 0
       this.persist()
     },
 
