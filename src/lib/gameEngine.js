@@ -52,6 +52,17 @@ function eliminate(team) {
   team.missCount = 0
 }
 
+// Next monotonic play-order index across all turns in the current game.
+function nextSeq(game) {
+  let m = 0
+  for (const t of game.teams) {
+    for (const tr of t.turnHistory) {
+      if (typeof tr.seq === 'number' && tr.seq > m) m = tr.seq
+    }
+  }
+  return m + 1
+}
+
 // ----- player rotation -----
 function turnsSinceLastThrow(team, playerIndex) {
   for (let i = team.turnHistory.length - 1; i >= 0; i--) {
@@ -114,8 +125,8 @@ function moveToNextPlayer(game) {
 
 /**
  * Record a throw (score 0 = miss). Returns { game, ended, eliminatedName, teamChanged }.
- * Faithful to recordScoreInternal: the exact-50 winning throw is NOT appended to
- * turnHistory (matches the Swift early-return), while miss/over-throw turns are.
+ * Every throw (including the exact-50 winning throw) is appended to turnHistory
+ * and stamped with a monotonic play-order seq used by undoLastThrow.
  */
 export function recordScore(inputGame, score) {
   const game = deepClone(inputGame)
@@ -123,6 +134,7 @@ export function recordScore(inputGame, score) {
   const team = game.teams[teamIdx]
   const player = team.players[team.currentPlayerIndex]
   const completedAt = new Date().toISOString()
+  const seq = nextSeq(game)
 
   let ended = false
   let eliminatedName = null
@@ -136,6 +148,7 @@ export function recordScore(inputGame, score) {
         playerIndex: team.currentPlayerIndex,
         score: 0,
         isMiss: true,
+        seq,
       })
     )
     if (team.missCount >= 3) {
@@ -166,6 +179,7 @@ export function recordScore(inputGame, score) {
         playerIndex: team.currentPlayerIndex,
         score,
         isMiss: false,
+        seq,
       })
     )
     if (newScore === TARGET) {
@@ -223,12 +237,38 @@ function recalcTeam(team) {
   team.isEliminated = eliminated
 }
 
+// Re-derive scores, cumulative, finish/winner from the current turnHistory.
+// Used after an edit or an undo so the whole game stays consistent.
+// Returns true if the game is finished.
+function rederive(game) {
+  for (const team of game.teams) recalcTeam(team)
+  for (const team of game.teams) {
+    team.gameResults = team.gameResults.filter((r) => r.gameNumber !== game.gameNumber)
+  }
+  updateAllCumulative(game)
+
+  const activeIdx = game.teams.map((_, i) => i).filter((i) => !game.teams[i].isEliminated)
+  const someAt50 = game.teams.some((t) => t.currentGameScore === TARGET)
+
+  if (someAt50 || activeIdx.length <= 1) {
+    const winnerIndex = activeWinnerIndex(game)
+    game.isFinished = true
+    game.winner = game.teams[winnerIndex]
+    finishAllTeams(game, winnerIndex, new Date().toISOString())
+    return true
+  }
+  game.isFinished = false
+  game.winner = null
+  if (game.teams[game.currentTeamIndex]?.isEliminated && activeIdx.length) {
+    game.currentTeamIndex = activeIdx[0]
+  }
+  return false
+}
+
 /**
  * Edit an already-recorded turn (score 0 = miss), then re-derive the full game
- * state consistently: recompute every team from its turnHistory, recompute
- * cumulative scores, and re-evaluate whether the game is finished (it may even
- * become un-finished if a winning throw is edited away).
- * Returns { game, ended }.
+ * state consistently. The game may even become un-finished if a winning throw
+ * is edited away. Returns { game, ended, statUpdate }.
  */
 export function editTurn(inputGame, teamIndex, turnIndex, newScore, newDetails) {
   const game = deepClone(inputGame)
@@ -239,33 +279,7 @@ export function editTurn(inputGame, teamIndex, turnIndex, newScore, newDetails) 
   turn.isMiss = newScore === 0
   if (newDetails) turn.details = { ...newDetails }
 
-  // recompute all teams (one team's elimination affects "last team standing")
-  for (const team of game.teams) recalcTeam(team)
-
-  // drop this game's finish records so cumulative + finish recompute cleanly
-  for (const team of game.teams) {
-    team.gameResults = team.gameResults.filter((r) => r.gameNumber !== game.gameNumber)
-  }
-  updateAllCumulative(game)
-
-  const activeIdx = game.teams.map((_, i) => i).filter((i) => !game.teams[i].isEliminated)
-  const someAt50 = game.teams.some((t) => t.currentGameScore === TARGET)
-
-  let ended = false
-  if (someAt50 || activeIdx.length <= 1) {
-    ended = true
-    const winnerIndex = activeWinnerIndex(game)
-    game.isFinished = true
-    game.winner = game.teams[winnerIndex]
-    finishAllTeams(game, winnerIndex, new Date().toISOString())
-  } else {
-    game.isFinished = false
-    game.winner = null
-    // if the active team pointer landed on an eliminated team, move it
-    if (game.teams[game.currentTeamIndex]?.isEliminated && activeIdx.length) {
-      game.currentTeamIndex = activeIdx[0]
-    }
-  }
+  const ended = rederive(game)
 
   // If this turn had a linked stats record (registered player, details saved),
   // report the new score + details so the caller can overwrite that record.
@@ -303,52 +317,52 @@ export function resetForNextGame(inputGame, orderedTeams) {
 }
 
 /**
- * Diff a popped snapshot against the restored one and return the stats
- * operations needed to roll the User.throwRecords back. Only turns that carry
- * a throwRecordId (registered player, details saved) produce operations —
- * plain/guest throws are correctly left untouched.
- *   - turns present only in popped (an undone throw) → 'remove'
- *   - turns present in both with the same id but a different score (an undone
- *     edit) → 'setScore' back to the restored value
+ * Undo the most recent throw in GAME-PROGRESS order — i.e. the turn with the
+ * latest timestamp across all teams — regardless of any edits made meanwhile.
+ * Removes that turn, re-derives game state, and makes it that team's turn again
+ * with the player who threw it. Returns { game, statRemoval } where statRemoval
+ * (or null) is the linked throwRecord to delete from the user's stats.
  */
-export function reconcileStats(poppedGame, restoredGame) {
-  const ops = []
-  poppedGame.teams.forEach((pT, ti) => {
-    const rT = restoredGame.teams[ti]
-    if (!rT) return
+export function undoLastThrow(inputGame) {
+  const game = deepClone(inputGame)
 
-    // removed throws
-    for (let k = rT.turnHistory.length; k < pT.turnHistory.length; k++) {
-      const turn = pT.turnHistory[k]
-      const player = pT.players[turn.playerIndex]
-      if (turn.throwRecordId && player?.user) {
-        ops.push({ type: 'remove', userId: player.user.id, recordId: turn.throwRecordId })
-      }
-    }
-
-    // edited throws (same id, different score and/or details)
-    const common = Math.min(pT.turnHistory.length, rT.turnHistory.length)
-    for (let k = 0; k < common; k++) {
-      const pTurn = pT.turnHistory[k]
-      const rTurn = rT.turnHistory[k]
-      if (
-        pTurn.throwRecordId &&
-        pTurn.throwRecordId === rTurn.throwRecordId &&
-        (pTurn.score !== rTurn.score ||
-          JSON.stringify(pTurn.details) !== JSON.stringify(rTurn.details))
-      ) {
-        const player = rT.players[rTurn.playerIndex]
-        if (player?.user) {
-          ops.push({
-            type: 'update',
-            userId: player.user.id,
-            recordId: rTurn.throwRecordId,
-            score: rTurn.score,
-            details: rTurn.details,
-          })
-        }
-      }
+  // find the team whose last turn is globally latest. Prefer the monotonic seq;
+  // fall back to timestamp for older saved data without seq.
+  let bestTeam = -1
+  let best = null // { seq, ts }
+  const isLater = (cand, cur) => {
+    if (!cur) return true
+    const cs = typeof cand.seq === 'number' && cand.seq > 0
+    const us = typeof cur.seq === 'number' && cur.seq > 0
+    if (cs && us) return cand.seq > cur.seq
+    if (cs !== us) return cs // a seq'd turn is newer than a non-seq'd one
+    return cand.ts > cur.ts
+  }
+  game.teams.forEach((t, i) => {
+    if (!t.turnHistory.length) return
+    const last = t.turnHistory[t.turnHistory.length - 1]
+    const cand = { seq: last.seq, ts: last.timestamp }
+    if (isLater(cand, best)) {
+      best = cand
+      bestTeam = i
     }
   })
-  return ops
+  if (bestTeam < 0) return { game, statRemoval: null } // nothing to undo
+
+  const team = game.teams[bestTeam]
+  const removed = team.turnHistory.pop()
+
+  rederive(game)
+
+  // it's that team's turn again, with the player who threw the removed turn
+  game.currentTeamIndex = bestTeam
+  team.currentPlayerIndex = removed.playerIndex
+
+  let statRemoval = null
+  const player = team.players[removed.playerIndex]
+  if (removed.throwRecordId && player?.user) {
+    statRemoval = { userId: player.user.id, recordId: removed.throwRecordId }
+  }
+
+  return { game, statRemoval }
 }

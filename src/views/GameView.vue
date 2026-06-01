@@ -7,8 +7,7 @@ import {
   selectPlayer as engineSelectPlayer,
   editTurn as engineEditTurn,
   resetForNextGame,
-  reconcileStats,
-  updateCumulativeScore,
+  undoLastThrow,
 } from '../lib/gameEngine.js'
 import { createThrowRecord, deepClone } from '../lib/models.js'
 import ThrowDetailsModal from '../components/ThrowDetailsModal.vue'
@@ -21,7 +20,6 @@ const router = useRouter()
 const store = useDataStore()
 
 const game = ref(null)
-const snapshots = ref([])
 const showDetails = ref(true)
 const lastRegisteredSwitch = ref(true)
 
@@ -42,7 +40,6 @@ onMounted(() => {
     return
   }
   game.value = deepClone(store.currentGame)
-  snapshots.value = [deepClone(game.value)]
   if (game.value.isFinished) showEnd.value = true
   updateSwitchState()
 })
@@ -58,7 +55,9 @@ const currentPlayer = computed(() => {
   if (!t) return null
   return t.players[t.currentPlayerIndex] ?? null
 })
-const canUndo = computed(() => snapshots.value.length > 1)
+// Undo is derived from game progress (turnHistory), not a UI stack — so it
+// survives navigating to stats and always steps back the latest throw.
+const canUndo = computed(() => !!game.value && game.value.teams.some((t) => t.turnHistory.length > 0))
 
 const scoreboard = computed(() => {
   const g = game.value
@@ -143,8 +142,6 @@ function applyThrow(score, details) {
     store.addThrowRecord(user, record)
   }
 
-  // One snapshot per throw → undo reliably steps back one throw.
-  snapshots.value.push(deepClone(game.value))
   store.updateCurrentGame(game.value)
   updateSwitchState()
 
@@ -155,21 +152,16 @@ function applyThrow(score, details) {
   }
 }
 
-// ----- undo -----
+// ----- undo (game-progress order: removes the latest throw) -----
 function undo() {
-  if (snapshots.value.length <= 1) {
+  if (!canUndo.value) {
     alertMsg.value = 'これ以上戻れません'
     return
   }
-  const popped = deepClone(snapshots.value[snapshots.value.length - 1])
-  snapshots.value.pop()
-  game.value = deepClone(snapshots.value[snapshots.value.length - 1])
-  // roll back any stats changes (removed throws / undone edits) by record id
-  for (const op of reconcileStats(popped, game.value)) {
-    if (op.type === 'remove') store.removeThrowRecordById(op.userId, op.recordId)
-    else if (op.type === 'update') store.applyRecordUpdate(op.userId, op.recordId, op.score, op.details)
-  }
-  game.value.teams.forEach(updateCumulativeScore)
+  const { game: next, statRemoval } = undoLastThrow(game.value)
+  game.value = next
+  if (statRemoval) store.removeThrowRecordById(statRemoval.userId, statRemoval.recordId)
+  showEnd.value = false // undoing typically resumes the game
   store.updateCurrentGame(game.value)
   updateSwitchState()
 }
@@ -202,8 +194,8 @@ function onEditConfirm({ score, details }) {
   if (statUpdate) {
     store.applyRecordUpdate(statUpdate.userId, statUpdate.recordId, statUpdate.score, statUpdate.details)
   }
-  // the edit is one undoable step (undo reverts score+details via reconcileStats)
-  snapshots.value.push(deepClone(game.value))
+  // edits modify state in place; they are not undo steps (undo follows game
+  // progress and removes the latest throw instead).
   store.updateCurrentGame(game.value)
   showEditModal.value = false
   showEnd.value = ended
@@ -252,7 +244,6 @@ function startNextGame() {
 }
 function confirmOrder(ordered) {
   game.value = resetForNextGame(game.value, ordered)
-  snapshots.value = [deepClone(game.value)]
   store.updateCurrentGame(game.value)
   showOrder.value = false
   updateSwitchState()

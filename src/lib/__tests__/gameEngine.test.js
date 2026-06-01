@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { recordScore, resetForNextGame, editTurn, reconcileStats } from '../gameEngine.js'
+import { recordScore, resetForNextGame, editTurn, undoLastThrow } from '../gameEngine.js'
 import { createGameRecord, createTeam, createPlayer, createUser } from '../models.js'
 
 function twoTeamGame() {
@@ -114,28 +114,56 @@ describe('stats linkage (edit + undo)', () => {
     expect(statUpdate).toBe(null)
   })
 
-  it('reconcileStats removes an added throw and reverts an edited score (by id only)', () => {
+  it('undoLastThrow reports the linked stats record to remove', () => {
     let g = registeredTwoTeam()
-    g = recordScore(g, 5).game
+    g = recordScore(g, 5).game // A throws
     g.teams[0].turnHistory[0].throwRecordId = 'rec-1'
-    const before = JSON.parse(JSON.stringify(g)) // has 1 linked turn @ score 5
-    const after = recordScore(g, 3).game // B throws (no record) -> length grows for B only
+    g = recordScore(g, 3).game // B throws (latest)
+    // latest throw is B's (no record) -> no stat removal
+    let res = undoLastThrow(g)
+    expect(res.statRemoval).toBe(null)
+    expect(res.game.teams[1].turnHistory).toHaveLength(0)
+    // now A's throw is latest -> undoing it removes rec-1
+    res = undoLastThrow(res.game)
+    expect(res.statRemoval).toMatchObject({ recordId: 'rec-1' })
+    expect(res.game.teams[0].turnHistory).toHaveLength(0)
+  })
+})
 
-    // undo of B's throw: B turn has no throwRecordId -> no stats op
-    expect(reconcileStats(after, g)).toHaveLength(0)
-
-    // edit A's turn 5 -> 9 (with new details), then reconcile back to `before`
-    const edited = editTurn(g, 0, 0, 9, {
-      throwTypeName: '縦投げ',
-      distance: 7,
-      isSuccessful: true,
-      notes: null,
-    }).game
-    const ops = reconcileStats(edited, before)
-    // restoring to `before` reverts score to 5 and details back to null
-    expect(ops).toEqual([
-      { type: 'update', userId: expect.any(String), recordId: 'rec-1', score: 5, details: null },
+describe('undoLastThrow (game-progress order)', () => {
+  function twoTeam() {
+    return createGameRecord([
+      createTeam('A', [createPlayer('a')]),
+      createTeam('B', [createPlayer('b')]),
     ])
+  }
+
+  it('removes the latest throw, not an edited older one', () => {
+    let g = twoTeam()
+    g = recordScore(g, 5).game // T1 A=5
+    g = recordScore(g, 3).game // T2 B=3
+    g = recordScore(g, 4).game // T3 A=9 (latest is A's 4)
+    // edit A's FIRST turn (older) from 5 -> 2
+    g = editTurn(g, 0, 0, 2).game
+    expect(g.teams[0].currentGameScore).toBe(6) // 2 + 4
+
+    // undo should remove A's latest throw (the 4), not revert the edit
+    const { game } = undoLastThrow(g)
+    expect(game.teams[0].turnHistory.map((t) => t.score)).toEqual([2]) // edit kept, last removed
+    expect(game.teams[0].currentGameScore).toBe(2)
+    expect(game.currentTeamIndex).toBe(0) // A throws again
+  })
+
+  it('un-finishes the game when the winning throw is undone', () => {
+    let g = twoTeam()
+    g.teams[0].currentGameScore = 44
+    // give the team a prior turn so currentGameScore reflects history on rederive
+    g.teams[0].turnHistory.push({ id: 'x', playerName: 'a', playerIndex: 0, timestamp: '2026-01-01T00:00:00.000Z', score: 44, isMiss: false, throwRecordId: null, details: null })
+    g = recordScore(g, 6).game // wins at 50
+    expect(g.isFinished).toBe(true)
+    const { game } = undoLastThrow(g)
+    expect(game.isFinished).toBe(false)
+    expect(game.teams[0].currentGameScore).toBe(44)
   })
 })
 

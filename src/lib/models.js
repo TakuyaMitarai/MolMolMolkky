@@ -68,7 +68,7 @@ export function createTeam(name, players) {
   }
 }
 
-export function createTurnRecord({ playerName, playerIndex, score, isMiss = false }) {
+export function createTurnRecord({ playerName, playerIndex, score, isMiss = false, seq = 0 }) {
   return {
     id: uuid(),
     playerName,
@@ -76,6 +76,7 @@ export function createTurnRecord({ playerName, playerIndex, score, isMiss = fals
     score,
     timestamp: nowIso(),
     isMiss,
+    seq, // monotonic play-order index within the game (set by recordScore)
     throwRecordId: null, // links to a User.throwRecords entry (stats) when one was saved
     details: null, // { throwTypeName, distance, isSuccessful, notes } when detail was saved
   }
