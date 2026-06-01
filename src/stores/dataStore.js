@@ -33,7 +33,7 @@ export const useDataStore = defineStore('data', {
         this.gameHistory = saved.gameHistory ?? []
         this.throwTypes =
           saved.throwTypes && saved.throwTypes.length ? saved.throwTypes : defaultThrowTypes()
-        this.ensureFuwatoge()
+        this.ensureDefaults()
       }
       this.loaded = true
     },
@@ -148,9 +148,13 @@ export const useDataStore = defineStore('data', {
       this.throwTypes = newList
       this.persist()
     },
-    ensureFuwatoge() {
+    // Ensure default throw types exist for users with older saved data.
+    ensureDefaults() {
+      if (!this.throwTypes.some((t) => t.name === '飛ばし')) {
+        this.throwTypes.splice(2, 0, createThrowType('飛ばし', { isDefault: true }))
+      }
       if (!this.throwTypes.some((t) => t.name === 'ふわ投げ')) {
-        this.throwTypes.splice(2, 0, createThrowType('ふわ投げ', { isDefault: true }))
+        this.throwTypes.push(createThrowType('ふわ投げ', { isDefault: true }))
       }
     },
 

@@ -40,9 +40,10 @@ export function defaultThrowTypes() {
   return [
     createThrowType('横投げ', { isDefault: true, isDeletable: true }),
     createThrowType('縦投げ', { isDefault: true, isDeletable: true }),
-    createThrowType('ふわ投げ', { isDefault: true, isDeletable: true }),
+    createThrowType('飛ばし', { isDefault: true, isDeletable: true }),
     createThrowType('バック', { isDefault: true, isDeletable: true }),
     createThrowType('ガシャ', { isDefault: true, isDeletable: false }),
+    createThrowType('ふわ投げ', { isDefault: true, isDeletable: true }),
   ]
 }
 
