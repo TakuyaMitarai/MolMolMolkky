@@ -230,13 +230,14 @@ function recalcTeam(team) {
  * become un-finished if a winning throw is edited away).
  * Returns { game, ended }.
  */
-export function editTurn(inputGame, teamIndex, turnIndex, newScore) {
+export function editTurn(inputGame, teamIndex, turnIndex, newScore, newDetails) {
   const game = deepClone(inputGame)
   const turn = game.teams[teamIndex]?.turnHistory[turnIndex]
   if (!turn) return { game, ended: game.isFinished, statUpdate: null }
 
   turn.score = newScore
   turn.isMiss = newScore === 0
+  if (newDetails) turn.details = { ...newDetails }
 
   // recompute all teams (one team's elimination affects "last team standing")
   for (const team of game.teams) recalcTeam(team)
@@ -267,11 +268,16 @@ export function editTurn(inputGame, teamIndex, turnIndex, newScore) {
   }
 
   // If this turn had a linked stats record (registered player, details saved),
-  // report the score change so the caller can update that record too.
+  // report the new score + details so the caller can overwrite that record.
   let statUpdate = null
   const player = game.teams[teamIndex].players[turn.playerIndex]
   if (turn.throwRecordId && player?.user) {
-    statUpdate = { userId: player.user.id, recordId: turn.throwRecordId, newScore }
+    statUpdate = {
+      userId: player.user.id,
+      recordId: turn.throwRecordId,
+      score: newScore,
+      details: turn.details,
+    }
   }
 
   return { game, ended, statUpdate }
@@ -320,7 +326,7 @@ export function reconcileStats(poppedGame, restoredGame) {
       }
     }
 
-    // edited throws (same id, different score)
+    // edited throws (same id, different score and/or details)
     const common = Math.min(pT.turnHistory.length, rT.turnHistory.length)
     for (let k = 0; k < common; k++) {
       const pTurn = pT.turnHistory[k]
@@ -328,15 +334,17 @@ export function reconcileStats(poppedGame, restoredGame) {
       if (
         pTurn.throwRecordId &&
         pTurn.throwRecordId === rTurn.throwRecordId &&
-        pTurn.score !== rTurn.score
+        (pTurn.score !== rTurn.score ||
+          JSON.stringify(pTurn.details) !== JSON.stringify(rTurn.details))
       ) {
         const player = rT.players[rTurn.playerIndex]
         if (player?.user) {
           ops.push({
-            type: 'setScore',
+            type: 'update',
             userId: player.user.id,
             recordId: rTurn.throwRecordId,
-            newScore: rTurn.score,
+            score: rTurn.score,
+            details: rTurn.details,
           })
         }
       }

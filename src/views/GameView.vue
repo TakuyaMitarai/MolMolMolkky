@@ -131,7 +131,15 @@ function applyThrow(score, details) {
       notes: details.notes,
     })
     const lastTurn = next.teams[throwingTeamIndex].turnHistory.at(-1)
-    if (lastTurn) lastTurn.throwRecordId = record.id
+    if (lastTurn) {
+      lastTurn.throwRecordId = record.id
+      lastTurn.details = {
+        throwTypeName: details.throwTypeName,
+        distance: details.distance,
+        isSuccessful: details.isSuccessful,
+        notes: details.notes ?? null,
+      }
+    }
     store.addThrowRecord(user, record)
   }
 
@@ -159,7 +167,7 @@ function undo() {
   // roll back any stats changes (removed throws / undone edits) by record id
   for (const op of reconcileStats(popped, game.value)) {
     if (op.type === 'remove') store.removeThrowRecordById(op.userId, op.recordId)
-    else if (op.type === 'setScore') store.setThrowRecordScore(op.userId, op.recordId, op.newScore)
+    else if (op.type === 'update') store.applyRecordUpdate(op.userId, op.recordId, op.score, op.details)
   }
   game.value.teams.forEach(updateCumulativeScore)
   store.updateCurrentGame(game.value)
@@ -180,13 +188,21 @@ function onCellClick(teamIndex, turnIndex) {
   editTarget.value = { teamIndex, turnIndex }
   showEditModal.value = true
 }
-function onEditConfirm(newScore) {
+function onEditConfirm({ score, details }) {
   const { teamIndex, turnIndex } = editTarget.value
-  const { game: next, ended, statUpdate } = engineEditTurn(game.value, teamIndex, turnIndex, newScore)
+  const { game: next, ended, statUpdate } = engineEditTurn(
+    game.value,
+    teamIndex,
+    turnIndex,
+    score,
+    details
+  )
   game.value = next
-  // keep the linked stats record in sync with the edited score
-  if (statUpdate) store.setThrowRecordScore(statUpdate.userId, statUpdate.recordId, statUpdate.newScore)
-  // the edit is one undoable step (undo reverts the score via reconcileStats)
+  // overwrite the linked stats record (score + details) when present
+  if (statUpdate) {
+    store.applyRecordUpdate(statUpdate.userId, statUpdate.recordId, statUpdate.score, statUpdate.details)
+  }
+  // the edit is one undoable step (undo reverts score+details via reconcileStats)
   snapshots.value.push(deepClone(game.value))
   store.updateCurrentGame(game.value)
   showEditModal.value = false
@@ -197,12 +213,23 @@ function editModalData() {
   const { teamIndex, turnIndex } = editTarget.value
   const team = game.value.teams[teamIndex]
   const turn = team.turnHistory[turnIndex]
+  const player = team.players[turn.playerIndex]
+  const detailed = !!(turn.throwRecordId && player?.user)
   return {
     teamName: teamLabel(team),
     playerName: turn.playerName,
     turnNumber: turnIndex + 1,
-    currentScore: turn.score,
-    currentIsMiss: turn.isMiss,
+    score: turn.score,
+    isMiss: turn.isMiss,
+    detailed,
+    throwTypes: store.throwTypes,
+    details:
+      turn.details || {
+        throwTypeName: store.throwTypes[0]?.name ?? '横投げ',
+        distance: 4,
+        isSuccessful: turn.score !== 0,
+        notes: null,
+      },
   }
 }
 

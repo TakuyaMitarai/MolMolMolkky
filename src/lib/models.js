@@ -76,6 +76,7 @@ export function createTurnRecord({ playerName, playerIndex, score, isMiss = fals
     timestamp: nowIso(),
     isMiss,
     throwRecordId: null, // links to a User.throwRecords entry (stats) when one was saved
+    details: null, // { throwTypeName, distance, isSuccessful, notes } when detail was saved
   }
 }
 

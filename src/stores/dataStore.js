@@ -88,14 +88,22 @@ export const useDataStore = defineStore('data', {
       this.users[i].throwRecords = this.users[i].throwRecords.filter((r) => r.id !== recordId)
       this.persist()
     },
-    // Update a stats record's score (used when a turn is edited / an edit is undone).
-    setThrowRecordScore(userId, recordId, newScore) {
+    // Overwrite a stats record's score (and details when provided). Used when a
+    // turn is edited and when an edit is undone (reconcileStats 'update' op).
+    applyRecordUpdate(userId, recordId, score, details) {
       const i = this.users.findIndex((u) => u.id === userId)
       if (i < 0) return
       const rec = this.users[i].throwRecords.find((r) => r.id === recordId)
       if (!rec) return
-      rec.score = newScore
-      rec.isSuccessful = newScore !== 0
+      rec.score = score
+      if (details) {
+        rec.throwTypeName = details.throwTypeName
+        rec.distance = details.distance
+        rec.isSuccessful = details.isSuccessful
+        if (details.notes !== undefined) rec.notes = details.notes
+      } else {
+        rec.isSuccessful = score !== 0
+      }
       this.persist()
     },
 

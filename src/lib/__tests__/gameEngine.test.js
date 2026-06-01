@@ -98,12 +98,13 @@ describe('stats linkage (edit + undo)', () => {
     ])
   }
 
-  it('editTurn reports a statUpdate when the turn is linked to a record', () => {
+  it('editTurn reports a statUpdate (score + details) when linked to a record', () => {
     let g = registeredTwoTeam()
     g = recordScore(g, 5).game
     g.teams[0].turnHistory[0].throwRecordId = 'rec-1' // simulate a saved stats record
-    const { statUpdate } = editTurn(g, 0, 0, 9)
-    expect(statUpdate).toMatchObject({ recordId: 'rec-1', newScore: 9 })
+    const newDetails = { throwTypeName: '縦投げ', distance: 7, isSuccessful: true, notes: null }
+    const { statUpdate } = editTurn(g, 0, 0, 9, newDetails)
+    expect(statUpdate).toMatchObject({ recordId: 'rec-1', score: 9, details: newDetails })
   })
 
   it('editTurn returns null statUpdate for a turn with no linked record', () => {
@@ -123,10 +124,18 @@ describe('stats linkage (edit + undo)', () => {
     // undo of B's throw: B turn has no throwRecordId -> no stats op
     expect(reconcileStats(after, g)).toHaveLength(0)
 
-    // edit A's turn 5 -> 9, then reconcile back to `before`
-    const edited = editTurn(g, 0, 0, 9).game
+    // edit A's turn 5 -> 9 (with new details), then reconcile back to `before`
+    const edited = editTurn(g, 0, 0, 9, {
+      throwTypeName: '縦投げ',
+      distance: 7,
+      isSuccessful: true,
+      notes: null,
+    }).game
     const ops = reconcileStats(edited, before)
-    expect(ops).toEqual([{ type: 'setScore', userId: expect.any(String), recordId: 'rec-1', newScore: 5 }])
+    // restoring to `before` reverts score to 5 and details back to null
+    expect(ops).toEqual([
+      { type: 'update', userId: expect.any(String), recordId: 'rec-1', score: 5, details: null },
+    ])
   })
 })
 
