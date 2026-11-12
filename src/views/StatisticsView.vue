@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '../stores/dataStore'
+import PageHeader from '../components/PageHeader.vue'
 
 const router = useRouter()
 const store = useDataStore()
@@ -32,9 +33,11 @@ const scoreData = computed(() => {
   return { data, max, total: filteredRecords.value.length }
 })
 
-// Non-gasha: distance success rate
+// Non-gasha: success rate per distance. The 4–12m axis is always drawn in
+// full so a distance keeps its position whether or not it has data yet.
 const distanceData = computed(() => {
   const map = new Map()
+  for (let d = 4; d <= 12; d++) map.set(d, { success: 0, total: 0 })
   for (const r of filteredRecords.value) {
     const cur = map.get(r.distance) ?? { success: 0, total: 0 }
     cur.total += 1
@@ -46,135 +49,280 @@ const distanceData = computed(() => {
     .map(([distance, { success, total }]) => ({
       distance,
       total,
+      success,
       rate: total ? Math.round((success / total) * 100) : 0,
     }))
 })
+
+const distanceSummary = computed(() => {
+  const total = filteredRecords.value.length
+  const success = filteredRecords.value.filter((r) => r.isSuccessful).length
+  return { total, success, rate: total ? Math.round((success / total) * 100) : 0 }
+})
+
+const BAR_AREA = 104 // px, must match .plot height below
+
+function goBack() {
+  if (window.history.state?.back) router.back()
+  else router.push({ name: 'home' })
+}
 </script>
 
 <template>
   <div class="page">
-    <div class="navbar">
-      <span class="spacer" />
-      <button class="btn-inline" @click="router.back()">完了</button>
-    </div>
-    <h1 class="page-title">統計情報</h1>
+    <PageHeader title="統計" @back="goBack" />
 
-    <div class="page-scroll pad col">
-      <h2 class="section-title">プレイヤー</h2>
-      <div class="scroll-x">
-        <div class="chip-row">
-          <button
-            v-for="u in store.users"
-            :key="u.id"
-            :class="['chip', { selected: selectedUserId === u.id }]"
-            @click="selectedUserId = u.id"
-          >
-            {{ u.name }}
-          </button>
-          <span v-if="!store.users.length" class="muted">ユーザーを登録してください</span>
-        </div>
+    <div class="page-body">
+      <div v-if="!store.users.length" class="empty">
+        <strong>まだプレイヤーが登録されていません</strong>
+        ホームの「プレイヤー登録」で追加すると、投げ方ごとの成績がここに出ます。
       </div>
 
-      <h2 class="section-title">期間</h2>
-      <div class="row">
-        <button :class="['chip', { selected: dateFilter === 'today' }]" @click="dateFilter = 'today'">今日</button>
-        <button :class="['chip', { selected: dateFilter === 'all' }]" @click="dateFilter = 'all'">総合</button>
-      </div>
-
-      <template v-if="selectedUser">
-        <h2 class="section-title">投げ方別統計</h2>
-        <div class="scroll-x">
-          <div class="chip-row">
+      <template v-else>
+        <section class="group">
+          <h2 class="label">プレイヤー</h2>
+          <div class="chips" role="radiogroup" aria-label="プレイヤー">
             <button
-              v-for="t in store.throwTypes"
-              :key="t.id"
-              :class="['chip', { selected: throwTypeName === t.name }]"
-              @click="throwTypeName = t.name"
+              v-for="u in store.users"
+              :key="u.id"
+              type="button"
+              role="radio"
+              :aria-checked="selectedUserId === u.id"
+              :class="['chip', { selected: selectedUserId === u.id }]"
+              @click="selectedUserId = u.id"
             >
-              {{ t.name }}
+              {{ u.name }}
             </button>
           </div>
+        </section>
+
+        <section class="group">
+          <h2 class="label">期間</h2>
+          <div class="seg" role="radiogroup" aria-label="期間">
+            <button
+              type="button"
+              role="radio"
+              :aria-checked="dateFilter === 'today'"
+              :class="['seg-btn', { on: dateFilter === 'today' }]"
+              @click="dateFilter = 'today'"
+            >
+              今日
+            </button>
+            <button
+              type="button"
+              role="radio"
+              :aria-checked="dateFilter === 'all'"
+              :class="['seg-btn', { on: dateFilter === 'all' }]"
+              @click="dateFilter = 'all'"
+            >
+              総合
+            </button>
+          </div>
+        </section>
+
+        <div v-if="!selectedUser" class="empty">
+          <strong>プレイヤーを選んでください</strong>
+          上の名前をタップすると成績を表示します。
         </div>
 
-        <!-- gasha: pin count -->
-        <div v-if="isGasha" class="card">
-          <h3 class="center">ピン数別統計</h3>
-          <div v-if="!scoreData.total" class="center muted">データがありません</div>
-          <div v-else class="scroll-x">
-            <div class="bar-chart">
-              <div v-for="s in 13" :key="s - 1" class="bar-col">
-                <span class="cnt">{{ scoreData.data[s - 1] }}</span>
-                <div class="bar" :style="{ height: (scoreData.data[s - 1] / scoreData.max) * 80 + 'px' }" />
-                <span class="lbl">{{ s - 1 }}</span>
-                <span class="den muted">/{{ scoreData.total }}</span>
-              </div>
+        <template v-else>
+          <section class="group">
+            <h2 class="label">投げ方</h2>
+            <div class="chips" role="radiogroup" aria-label="投げ方">
+              <button
+                v-for="t in store.throwTypes"
+                :key="t.id"
+                type="button"
+                role="radio"
+                :aria-checked="throwTypeName === t.name"
+                :class="['chip', { selected: throwTypeName === t.name }]"
+                @click="throwTypeName = t.name"
+              >
+                {{ t.name }}
+              </button>
             </div>
-          </div>
-        </div>
+          </section>
 
-        <!-- non-gasha: distance success rate -->
-        <div v-else class="card">
-          <h3 class="center">距離別成功率</h3>
-          <div v-if="!distanceData.length" class="center muted">データがありません</div>
-          <div v-else class="scroll-x">
-            <div class="bar-chart">
-              <div v-for="d in distanceData" :key="d.distance" class="bar-col">
-                <span class="cnt">{{ d.rate }}%</span>
-                <div class="bar" :style="{ height: d.rate * 0.8 + 'px' }" />
-                <span class="lbl">{{ d.distance }}m</span>
-                <span class="den muted">({{ d.total }})</span>
+          <!-- gasha: how many pins fell -->
+          <section v-if="isGasha" class="card chart-card">
+            <header class="chart-head">
+              <h3>倒したピン数の回数</h3>
+              <p class="num">全{{ scoreData.total }}投</p>
+            </header>
+            <div v-if="!scoreData.total" class="no-data">この条件の記録はまだありません</div>
+            <div v-else class="chart" role="img" :aria-label="`ガシャ投げで倒したピン数ごとの回数。全${scoreData.total}投`">
+              <div class="plot">
+                <div
+                  v-for="s in 13"
+                  :key="s - 1"
+                  class="col"
+                  :title="`${s - 1}本: ${scoreData.data[s - 1]}回 / ${scoreData.total}投`"
+                >
+                  <span v-if="scoreData.data[s - 1]" class="val num">{{ scoreData.data[s - 1] }}</span>
+                  <span
+                    class="bar"
+                    :class="{ zero: !scoreData.data[s - 1] }"
+                    :style="{ height: (scoreData.data[s - 1] / scoreData.max) * BAR_AREA + 'px' }"
+                  />
+                </div>
               </div>
+              <div class="axis">
+                <span v-for="s in 13" :key="s - 1" class="tick num">{{ s - 1 }}</span>
+              </div>
+              <p class="axis-title">倒したピン数（本）</p>
             </div>
-          </div>
-        </div>
+          </section>
+
+          <!-- other throws: success rate by distance -->
+          <section v-else class="card chart-card">
+            <header class="chart-head">
+              <h3>距離ごとの成功率</h3>
+              <p class="num">
+                {{ distanceSummary.total }}投中 {{ distanceSummary.success }}回成功（{{ distanceSummary.rate }}%）
+              </p>
+            </header>
+            <div v-if="!distanceSummary.total" class="no-data">この条件の記録はまだありません</div>
+            <div v-else class="chart with-gutter" role="img" :aria-label="`${throwTypeName}の距離ごとの成功率`">
+              <div class="plot rate">
+                <span class="grid g100"><em class="num">100%</em></span>
+                <span class="grid g50"><em class="num">50%</em></span>
+                <div
+                  v-for="d in distanceData"
+                  :key="d.distance"
+                  class="col"
+                  :title="`${d.distance}m: ${d.total ? d.rate + '%（' + d.success + '/' + d.total + '）' : '記録なし'}`"
+                >
+                  <span v-if="d.total" class="val num">{{ d.rate }}</span>
+                  <span class="bar" :class="{ zero: !d.total || !d.rate }" :style="{ height: (d.rate / 100) * BAR_AREA + 'px' }" />
+                </div>
+              </div>
+              <div class="axis">
+                <span v-for="d in distanceData" :key="d.distance" class="tick num">
+                  {{ d.distance }}
+                  <small>{{ d.total ? d.total + '投' : '' }}</small>
+                </span>
+              </div>
+              <p class="axis-title">距離（m）と投数。棒の上の数字は成功率（%）</p>
+            </div>
+          </section>
+        </template>
       </template>
-      <div v-else class="center muted empty">👆 プレイヤーを選択してください</div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.chip-row {
+.chart-card {
+  padding: 16px 14px 14px;
+}
+.chart-head {
   display: flex;
-  gap: 0.5rem;
-  padding-bottom: 0.25rem;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
 }
-.chip-row .chip {
-  white-space: nowrap;
-  width: auto;
+.chart-head h3 {
+  font-size: 1rem;
+  font-weight: 700;
 }
-.bar-chart {
+.chart-head p {
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+}
+.no-data {
+  padding: 28px 0;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--ink-2);
+}
+
+/* One series, one colour. Values sit on the column caps because the screen
+   is touch-first and has no hover. */
+.plot {
+  position: relative;
   display: flex;
   align-items: flex-end;
-  gap: 0.5rem;
-  padding: 0.5rem 0;
-  min-height: 130px;
+  height: 128px; /* 104px of bar + room for the cap label */
+  border-bottom: 1px solid var(--line-strong);
 }
-.bar-col {
+.col {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  gap: 2px;
+  gap: 3px;
+  position: relative;
 }
 .bar {
-  width: 24px;
-  min-height: 2px;
+  width: 100%;
+  max-width: 18px;
   background: var(--navy);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 2px;
+  border-radius: 4px 4px 0 0;
 }
-.cnt,
-.lbl {
-  font-size: 0.7rem;
+.bar.zero {
+  height: 0 !important;
 }
-.den {
-  font-size: 0.65rem;
+.val {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
 }
-.empty {
-  padding: 3rem 0;
+.grid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px solid var(--line);
 }
-h3 {
-  margin: 0.3rem 0;
+.grid.g100 {
+  bottom: 104px;
+}
+.grid.g50 {
+  bottom: 52px;
+}
+.grid em {
+  position: absolute;
+  right: 0;
+  top: -0.5em;
+  line-height: 1;
+  font-style: normal;
+  font-size: 0.625rem;
+  color: var(--ink-2);
+  background: var(--white);
+  padding-left: 4px;
+}
+/* the rate chart keeps a right-hand gutter for the 50% / 100% labels */
+.with-gutter .plot,
+.with-gutter .axis {
+  padding-right: 34px;
+}
+.axis {
+  display: flex;
+  margin-top: 5px;
+}
+.tick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.tick small {
+  min-height: 0.8rem;
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.axis-title {
+  margin-top: 6px;
+  font-size: 0.6875rem;
+  color: var(--ink-2);
+  text-align: center;
 }
 </style>

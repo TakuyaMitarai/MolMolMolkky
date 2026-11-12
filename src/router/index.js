@@ -11,7 +11,16 @@ const routes = [
   { path: '/throw-types', name: 'throwTypes', component: () => import('../views/ThrowTypeManagementView.vue') },
 ]
 
-export default createRouter({
+const router = createRouter({
   history: createWebHashHistory(import.meta.env.BASE_URL),
   routes,
 })
+
+// Keep the browser's status-bar tint in step with the top of each screen:
+// the home hero is sky, every other page starts on the pale ground.
+router.afterEach((to) => {
+  const meta = document.querySelector('meta[name="theme-color"]')
+  if (meta) meta.setAttribute('content', to.name === 'home' ? '#8ecae6' : '#f1f9fc')
+})
+
+export default router

@@ -17,6 +17,10 @@
 - チーム内は全チーム一巡ごとに「最後に投げてからのターン数が最大」のプレイヤーを自動選択（手動切替も可）。
 - ちょうど50で勝利した投擲も `turnHistory` に記録され、スコアボードに表示される。
 - 連戦: ゲーム終了 → チーム順序を再設定 → 次ゲーム（gameNumber++、累計は保持）。
+- **同じチームで得点をリセット**: ゲーム終了時のもう一つの続け方。チームとプレイヤーはそのまま、
+  ゲーム得点・過去ゲーム結果・累計をすべて 0 に戻し、**順番決め画面から** gameNumber=1 で再開する
+  （`resetWithSameTeams`）。終了した対戦は `finishGame` と同様に `gameHistory` へ保存してから
+  新しい `GameRecord` に差し替える（`store.restartWithSameTeams`）。投擲の統計レコードは消えない。
 - **Undo（進捗順）**: スナップショットではなく、**ゲーム進捗上の最後の投擲**（全チームの中で
   `TurnRecord.seq` が最大＝最新のターン）を1つ取り消す（`undoLastThrow`）。`seq` は投擲ごとの単調増加
   インデックス（古い保存データには無いので timestamp でフォールバック）。Undo は `store.currentGame` 由来の
@@ -38,22 +42,32 @@
 
 - **Vue 3**（Composition API / `<script setup>`） + **Vite** + **Pinia** + **Vue Router**。
 - ルーターは **hash history**（`createWebHashHistory`）。GitHub Pages でリロード時の 404 を回避するため。
-- スタイルは **プレーンCSS**。グローバルテーマ `src/assets/styles/theme.css`（紺 `--navy` × 白）。
+- スタイルは **プレーンCSS**。グローバルテーマ `src/assets/styles/theme.css`
+  （空色 `--sky` × 白 × 紺 `--navy` の3色。詳細は「レスポンシブ / デザイン」）。
 
 ```
 src/
   main.js                 エントリ（Pinia/Router/theme.css）
-  App.vue                 .app-frame(全画面紺) > .app-shell(モバイル幅) のレスポンシブ枠
+  App.vue                 .app-frame(全画面の空色) > .app-shell(モバイル幅) のレスポンシブ枠
   router/index.js         hash ルーティング
   stores/dataStore.js     DataManager 相当（state + actions、localStorage 自動保存、CSV I/O）
   lib/                    UI から独立した純粋ロジック
     models.js             ファクトリ関数（User/Team/Player/GameRecord/...）と既定投げ方
-    gameEngine.js         モルックのルール（純関数。recordScore など）
+    gameEngine.js         モルックのルール（純関数。recordScore / resetWithSameTeams など）
+    teamLabel.js          チーム表示名（全プレイヤー名を & で連結）
     recommendations.js    スキットル推薦
     csv.js                単一CSV の直列化/パース（RFC4180 風）
     persistence.js        localStorage load/save/clear
   views/                  画面（ルートに対応）
-  components/             モーダル（ThrowDetails/Recommendations/PlayerSelection/TeamOrder）
+  components/
+    AppIcon.vue           線画アイコン集（絵文字は使わない。アイコンはすべてここ）
+    PageHeader.vue        各画面共通の上部バー（左に戻る、タイトル）
+    BottomSheet.vue       全モーダル共通の下から出るシート（タイトル固定・中身スクロール・フッター固定）
+    ConfirmDialog.vue     確認/お知らせダイアログ（ブラウザの confirm()/alert は使わない）
+    DistancePicker.vue    距離 4〜12m の1タップ選択
+    SkittleFormation.vue  ホームの紋章（スキットル12本の初期配置）
+    TeamOrderModal.vue    投げる順番（矢印で入替 / シャッフル演出）
+    ThrowDetails / EditTurn / PlayerSelection / Recommendations … 各モーダル
 ```
 
 ### 元 Swift ファイル → Vue 対応表
@@ -94,11 +108,30 @@ Swift は端末の Documents に JSON 保存していたが、GitHub Pages に�
 
 ## レスポンシブ / デザイン
 
-- スマホ最優先。`.app-shell`（`max-width:430px`）を中央寄せし、PC では疑似端末フレームとして
-  同じ見た目を維持。背景の紺グラデは全画面。
-- セーフエリア（`env(safe-area-inset-*)`）・`100dvh`・viewport `viewport-fit=cover` 対応。
-- ボタンは `:active { transform: scale(.95) }` で SwiftUI の押下感を再現。
-- スコアボード等の横長要素は `.scroll-x` で横スクロール。
+### 色（3色のみ）
+- ベースは **空色 `#8ECAE6`（`--sky`）・白 `#FFFFFF`・紺 `#1D3557`（`--navy`）** の3色。
+  それ以外の値（`--sky-50〜300`、`--ink-2`、`--line` など）はすべてこの3色を白と混ぜた濃淡で、
+  `theme.css` の先頭に定義している。**新しい色相（赤・黄・緑など）は足さない。**
+- 状態は色ではなく **形・塗り・言葉** で表す: 失投は得点板で `×`、失投回数は塗りつぶした丸、
+  脱落は「脱落」タグと取り消し線、勝者はトロフィーのアイコンと「勝ち」タグ。
+- コントラスト: 紺×白 12.5:1、紺×空色 6.9:1。**空色の上に白文字は置かない**（1.8:1）。
+
+### 文字・アイコン
+- 英数字は同梱フォント **Jost**（`@fontsource-variable/jost`、外部通信なし）、日本語は端末のゴシック。
+- **絵文字は使わない。** アイコンは `AppIcon.vue` の線画に追加して使う。
+
+### レイアウト
+- スマホ最優先。`.app-shell`（`max-width:430px`）を中央寄せし、PC では空色の背景の上に同じ幅で表示。
+- 各画面は `.page`（上部固定 → `.page-body` がスクロール → 下部固定）。`.app-shell` 自体はスクロールしない。
+- セーフエリア（`env(safe-area-inset-*)`）は各画面の上下バーが自分で余白を取る。`100dvh` 対応。
+- 対戦画面は **「投げる人」を上に、得点キーとメニューを下に固定**（`.game-top` / `.dock` / `.actions`）。
+  チーム数が多いときや背の低い画面では間（累計カードと得点板）だけがスクロールし、次に投げるチームの
+  カードと行が見えるよう自動で送る（`followCurrentTeam`）。得点キーは丸（スキットルの上面）。
+- 得点板は横スクロール。次に入力するマスが見えるよう自動で送る（`scrollBoardToCurrent`）。
+- モーダルは `BottomSheet`、確認は `ConfirmDialog` に統一。
+- 動きは「操作への返事」に限る。唯一の演出は **順番シャッフル**（カードを裏返して束ね、
+  数回切ってから番号の枠へ配って表に返す）。結果は演出の前に Fisher–Yates で確定している。
+  `prefers-reduced-motion` では演出を省いて結果だけ反映する。
 
 ## 開発コマンド
 
@@ -125,4 +158,6 @@ npm run test     # Vitest（gameEngine / csv のユニットテスト）
 - ゲームのルールや CSV など**ロジックは `lib/` に純関数**で置き、UI（views/components）から分離する。
   新しいルール変更はまず `lib/gameEngine.js` に入れ、必要なら `__tests__` にテストを追加。
 - 状態は Pinia store 経由でのみ更新し、変更後は `persist()` で localStorage 同期。
+- UI は `theme.css` の共通クラス（`.btn` `.chip` `.seg` `.pin-key` `.card` `.field` など）を使い、
+  画面ごとの `<style scoped>` には固有のレイアウトだけを書く。色は必ず CSS 変数で指定する。
 - 日付は ISO 文字列、ID は `crypto.randomUUID()`。

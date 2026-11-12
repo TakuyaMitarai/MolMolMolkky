@@ -3,6 +3,8 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '../stores/dataStore'
 import { createTeam, createPlayer } from '../lib/models.js'
+import AppIcon from '../components/AppIcon.vue'
+import PageHeader from '../components/PageHeader.vue'
 import TeamOrderModal from '../components/TeamOrderModal.vue'
 
 const router = useRouter()
@@ -45,13 +47,20 @@ function buildTeams() {
 }
 
 function startGame() {
+  message.value = ''
   if (teams.value.length < 2) {
     message.value = '最低2チームが必要です'
     return
   }
-  for (const t of teams.value) {
+  for (const [ti, t] of teams.value.entries()) {
     if (t.players.length === 0) {
       message.value = '各チームに最低1人のプレイヤーが必要です'
+      return
+    }
+    // "登録" was chosen but nobody picked: say so instead of silently
+    // falling back to a guest (whose throws would not reach the stats).
+    if (t.players.some((p) => p.mode === 'registered' && !p.userId)) {
+      message.value = `チーム${ti + 1}: 登録プレイヤーを選ぶか「ゲスト」に切り替えてください`
       return
     }
   }
@@ -71,50 +80,95 @@ function confirmOrder(ordered) {
 
 <template>
   <div class="page">
-    <div class="navbar">
-      <span class="spacer" />
-      <button class="btn-inline" @click="router.push({ name: 'home' })">キャンセル</button>
-    </div>
-    <h1 class="page-title">対戦</h1>
+    <PageHeader
+      title="対戦の準備"
+      sub="チームとプレイヤーを決めます"
+      backLabel="ホームに戻る"
+      @back="router.push({ name: 'home' })"
+    />
 
-    <div class="page-scroll pad">
-      <div v-for="(team, ti) in teams" :key="ti" class="card team-card">
+    <div class="page-body">
+      <section v-for="(team, ti) in teams" :key="ti" class="card team-card">
         <div class="team-head">
-          <span class="team-no">チーム {{ ti + 1 }}</span>
-          <button v-if="ti >= 2" class="btn-danger" @click="removeTeam(ti)">削除</button>
+          <h2>チーム {{ ti + 1 }}</h2>
+          <button v-if="teams.length > 2" class="remove-team" @click="removeTeam(ti)">
+            <AppIcon name="trash" :size="18" />チームを削除
+          </button>
         </div>
 
-        <div v-for="(p, pi) in team.players" :key="pi" class="player-row">
-          <div class="seg">
-            <button :class="['seg-btn', { on: p.mode === 'registered' }]" @click="p.mode = 'registered'">
+        <div v-for="(p, pi) in team.players" :key="pi" class="player">
+          <div class="seg" role="radiogroup" :aria-label="`チーム${ti + 1} プレイヤー${pi + 1}の種別`">
+            <button
+              type="button"
+              role="radio"
+              :aria-checked="p.mode === 'registered'"
+              :class="['seg-btn', { on: p.mode === 'registered' }]"
+              @click="p.mode = 'registered'"
+            >
               登録
             </button>
-            <button :class="['seg-btn', { on: p.mode === 'guest' }]" @click="p.mode = 'guest'">
+            <button
+              type="button"
+              role="radio"
+              :aria-checked="p.mode === 'guest'"
+              :class="['seg-btn', { on: p.mode === 'guest' }]"
+              @click="p.mode = 'guest'"
+            >
               ゲスト
             </button>
           </div>
-          <select v-if="p.mode === 'registered'" v-model="p.userId" class="text-field">
-            <option :value="null" disabled>登録ユーザーを選択</option>
-            <option v-for="u in store.users" :key="u.id" :value="u.id">{{ u.name }}</option>
-          </select>
-          <input v-else v-model="p.name" class="text-field" type="text" placeholder="プレイヤー名" />
-          <button v-if="team.players.length > 1" class="trash" @click="removePlayer(team, pi)">✕</button>
+
+          <template v-if="p.mode === 'registered'">
+            <select
+              v-if="store.users.length"
+              v-model="p.userId"
+              class="field"
+              :aria-label="`チーム${ti + 1} プレイヤー${pi + 1}`"
+            >
+              <option :value="null" disabled>プレイヤーを選ぶ</option>
+              <option v-for="u in store.users" :key="u.id" :value="u.id">{{ u.name }}</option>
+            </select>
+            <p v-else class="no-users">登録プレイヤーがいません。ホームの「プレイヤー登録」で追加できます。</p>
+          </template>
+          <input
+            v-else
+            v-model="p.name"
+            class="field"
+            type="text"
+            placeholder="プレイヤー名"
+            autocomplete="off"
+            :aria-label="`チーム${ti + 1} プレイヤー${pi + 1}の名前`"
+          />
+
+          <button
+            v-if="team.players.length > 1"
+            class="icon-btn"
+            :aria-label="`プレイヤー${pi + 1}を外す`"
+            @click="removePlayer(team, pi)"
+          >
+            <AppIcon name="close" :size="20" />
+          </button>
         </div>
 
-        <button class="add-link" @click="addPlayer(team)">＋ プレイヤー追加</button>
-      </div>
+        <button class="add-link" @click="addPlayer(team)">
+          <AppIcon name="plus" :size="18" />プレイヤーを追加
+        </button>
+      </section>
 
-      <button class="btn btn-secondary" @click="addTeam">＋ チーム追加</button>
+      <button class="add-team" @click="addTeam"><AppIcon name="plus" :size="20" />チームを追加</button>
     </div>
 
-    <div class="pad footer">
-      <p v-if="message" class="center muted">{{ message }}</p>
-      <button class="btn btn-primary" @click="startGame">対戦開始</button>
+    <div class="page-foot">
+      <p v-if="message" class="notice" role="alert">{{ message }}</p>
+      <button class="btn btn-primary" @click="startGame">投げる順番を決める</button>
     </div>
 
     <TeamOrderModal
       v-if="showOrder"
       :teams="orderTeams"
+      title="投げる順番"
+      sub="第1ゲームの順番を決めます"
+      confirm-label="この順番ではじめる"
       @confirm="confirmOrder"
       @close="showOrder = false"
     />
@@ -122,56 +176,80 @@ function confirmOrder(ordered) {
 </template>
 
 <style scoped>
+.page-body {
+  gap: 12px;
+}
 .team-card {
-  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
 }
 .team-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.5rem;
+  min-height: 32px;
 }
-.team-no {
+.team-head h2 {
+  font-size: 1rem;
   font-weight: 700;
 }
-.player-row {
+.remove-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 4px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.player {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  margin-bottom: 0.6rem;
   flex-wrap: wrap;
+  gap: 8px;
 }
-.seg {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
+.player .seg {
+  flex: none;
 }
-.seg-btn {
-  padding: 0.4rem 0.6rem;
-  font-size: 0.8rem;
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
+.player .seg-btn {
+  min-height: 42px;
+  padding: 4px 12px;
+  font-size: 0.875rem;
 }
-.seg-btn.on {
-  background: #fff;
-  color: var(--navy);
-  font-weight: 700;
+.player .field {
+  flex: 1 1 9rem;
+  min-width: 0;
 }
-.player-row .text-field {
-  flex: 1;
-  min-width: 8rem;
-}
-.trash {
-  color: var(--c-red);
-  font-size: 1rem;
-  padding: 0.3rem 0.5rem;
+.no-users {
+  flex: 1 1 9rem;
+  font-size: 0.8125rem;
+  color: var(--ink-2);
 }
 .add-link {
-  color: #cfe0ff;
-  font-size: 0.9rem;
-  padding: 0.3rem 0;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  font-size: 0.875rem;
+  font-weight: 700;
 }
-.footer {
-  padding-bottom: 1.5rem;
+.add-team {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 52px;
+  border-radius: var(--radius-m);
+  border: 1.5px dashed var(--line-strong);
+  font-weight: 700;
+  transition: background-color 0.15s ease;
+}
+.add-team:active {
+  background: var(--sky-100);
 }
 </style>

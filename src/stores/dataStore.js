@@ -10,6 +10,7 @@ import {
   createThrowType,
 } from '../lib/models.js'
 import { getRecommendations } from '../lib/recommendations.js'
+import { resetWithSameTeams } from '../lib/gameEngine.js'
 import { serializeCsv, parseCsv, mergeUsers } from '../lib/csv.js'
 import { loadState, saveState, clearState } from '../lib/persistence.js'
 
@@ -20,6 +21,9 @@ export const useDataStore = defineStore('data', {
     gameHistory: [],
     throwTypes: defaultThrowTypes(),
     loaded: false,
+    // UI preference for the game screen's "投擲詳細" switch. Session-only:
+    // deliberately not written to localStorage.
+    recordDetails: true,
   }),
 
   actions: {
@@ -122,6 +126,16 @@ export const useDataStore = defineStore('data', {
         this.currentGame = null
         this.persist()
       }
+    },
+    // "同じチームで得点をリセット": archive the finished match exactly like
+    // finishGame does, then start a fresh one with the same teams (in the
+    // given throwing order) and every score back at zero.
+    restartWithSameTeams(orderedTeams) {
+      if (!this.currentGame) return
+      const finished = this.currentGame
+      this.gameHistory.push(finished)
+      this.currentGame = resetWithSameTeams(finished, orderedTeams)
+      this.persist()
     },
     clearCurrentGame() {
       this.currentGame = null

@@ -1,14 +1,13 @@
 <script setup>
-import { onMounted } from 'vue'
 import { useDataStore } from './stores/dataStore'
 
-// Load persisted state from localStorage once at startup.
+// Load persisted state from localStorage before any view reads the store.
 const store = useDataStore()
-onMounted(() => store.loadFromStorage())
+store.loadFromStorage()
 </script>
 
 <template>
-  <!-- .app-frame is the full-bleed navy background; .app-shell is the
+  <!-- .app-frame is the full-bleed sky backdrop; .app-shell is the
        mobile-width column centered on PC (pseudo-device frame). -->
   <div class="app-frame">
     <div class="app-shell">

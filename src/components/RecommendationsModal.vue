@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { getRecommendations } from '../lib/recommendations.js'
+import { teamLabel } from '../lib/teamLabel.js'
+import BottomSheet from './BottomSheet.vue'
 
 const props = defineProps({ game: { type: Object, required: true } })
 const emit = defineEmits(['toggle-skittle', 'close'])
@@ -10,6 +12,7 @@ const selectedTeamIndex = ref(props.game.currentTeamIndex >= 0 ? props.game.curr
 const selectedTeam = computed(() => props.game.teams[selectedTeamIndex.value])
 const selectedSkittles = computed(() => new Set(selectedTeam.value.selectedSkittles))
 const recommendations = computed(() => getRecommendations(selectedTeam.value.currentGameScore))
+const remaining = computed(() => recommendations.value.targetScore - selectedTeam.value.currentGameScore)
 
 const filtered = computed(() => {
   const sel = selectedSkittles.value
@@ -22,148 +25,148 @@ const filtered = computed(() => {
   return [...normal.map((c) => ({ combo: c, dimmed: false })), ...dimmed.map((c) => ({ combo: c, dimmed: true }))]
 })
 
-function teamLabel(team) {
-  const names = (team.players || []).map((p) => p.user?.name).filter(Boolean)
-  return names.length ? names.join(' & ') : team.name
-}
 function toggle(n) {
   emit('toggle-skittle', { teamIndex: selectedTeamIndex.value, number: n })
 }
 </script>
 
 <template>
-  <div class="overlay" @click.self="emit('close')">
-    <div class="sheet page">
-      <div class="navbar">
-        <span class="spacer" />
-        <button class="btn-inline" @click="emit('close')">閉じる ✕</button>
-      </div>
-      <h1 class="page-title">スキットル推薦</h1>
-
-      <div class="pad col">
-        <div class="row team-tabs">
-          <button
-            v-for="(t, i) in game.teams"
-            :key="t.id"
-            :class="['chip', { selected: selectedTeamIndex === i }]"
-            @click="selectedTeamIndex = i"
-          >
-            {{ teamLabel(t) }}
-          </button>
-        </div>
-        <p class="center muted">{{ teamLabel(selectedTeam) }}: {{ selectedTeam.currentGameScore }}点</p>
-
-        <div class="skittle-grid">
-          <button
-            v-for="n in 12"
-            :key="n"
-            :class="['skittle', { on: selectedSkittles.has(n) }]"
-            @click="toggle(n)"
-          >
-            {{ n }}
-          </button>
-        </div>
-      </div>
-
-      <div class="page-scroll pad">
-        <div v-if="!recommendations.combinations.length" class="center muted empty">
-          <p style="font-size: 2rem">⚠️</p>
-          <p>推薦できる組み合わせがありません</p>
-          <p>3手以内で達成できません</p>
-        </div>
-        <div v-else class="rec-grid">
-          <div
-            v-for="(item, idx) in filtered"
-            :key="idx"
-            :class="['rec', { dimmed: item.dimmed }]"
-          >
-            <span class="rec-no">{{ idx + 1 }}</span>
-            <div class="combo">
-              <template v-for="(n, ci) in item.combo" :key="ci">
-                <button :class="['mini', { on: selectedSkittles.has(n) }]" @click="toggle(n)">{{ n }}</button>
-                <span v-if="ci < item.combo.length - 1" class="arrow">→</span>
-              </template>
-            </div>
-          </div>
-        </div>
-      </div>
+  <BottomSheet title="50点へのおすすめ" sub="3投以内でちょうど50点になる組み合わせ" @close="emit('close')">
+    <div class="chips" role="radiogroup" aria-label="チーム">
+      <button
+        v-for="(t, i) in game.teams"
+        :key="t.id"
+        type="button"
+        role="radio"
+        :aria-checked="selectedTeamIndex === i"
+        :class="['chip', { selected: selectedTeamIndex === i }]"
+        @click="selectedTeamIndex = i"
+      >
+        {{ teamLabel(t) }}
+      </button>
     </div>
-  </div>
+
+    <div class="status">
+      <p class="status-now num">いま <strong>{{ selectedTeam.currentGameScore }}</strong>点</p>
+      <p class="status-left num">あと <strong>{{ remaining }}</strong>点</p>
+    </div>
+
+    <div class="group">
+      <span class="label">狙いにくい数字</span>
+      <div class="pin-grid">
+        <button
+          v-for="n in 12"
+          :key="n"
+          type="button"
+          :aria-pressed="selectedSkittles.has(n)"
+          :class="['pin-key', 'pick', { selected: selectedSkittles.has(n) }]"
+          @click="toggle(n)"
+        >
+          {{ n }}
+        </button>
+      </div>
+      <p class="hint">タップした数字を使う組み合わせは、薄く表示して後ろに回します。</p>
+    </div>
+
+    <div class="group">
+      <span class="label">組み合わせ {{ filtered.length }}通り</span>
+      <div v-if="!recommendations.combinations.length" class="empty">
+        <strong>3投以内では50点に届きません</strong>
+        まずは大きい数字で得点を重ねましょう。
+      </div>
+      <ol v-else class="rec-grid">
+        <li v-for="(item, idx) in filtered" :key="idx" :class="['rec', { dimmed: item.dimmed }]">
+          <span class="combo">
+            <template v-for="(n, ci) in item.combo" :key="ci">
+              <span v-if="ci > 0" class="plus" aria-hidden="true">+</span>
+              <button
+                type="button"
+                :aria-pressed="selectedSkittles.has(n)"
+                :class="['mini', 'num', { on: selectedSkittles.has(n) }]"
+                @click="toggle(n)"
+              >
+                {{ n }}
+              </button>
+            </template>
+          </span>
+        </li>
+      </ol>
+    </div>
+  </BottomSheet>
 </template>
 
 <style scoped>
-.team-tabs .chip {
-  flex: 1;
-  width: auto;
-}
-.skittle-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 0.5rem;
-}
-.skittle {
-  aspect-ratio: 1;
-  border-radius: 8px;
-  font-weight: 700;
-  background: rgba(255, 255, 255, 0.85);
-  color: var(--navy);
-  border: 2px solid #fff;
-}
-.skittle.on {
+.status {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-radius: 16px;
   background: var(--navy);
-  color: #fff;
+  color: var(--white);
 }
+.status p {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.status strong {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.1;
+  margin: 0 2px;
+}
+.status-now {
+  color: var(--sky);
+}
+.status-now strong {
+  font-size: 1.25rem;
+}
+
 .rec-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.6rem;
+  gap: 8px;
 }
 .rec {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
-  padding: 0.5rem;
+  justify-content: center;
+  min-height: 48px;
+  padding: 6px 4px;
+  border-radius: 12px;
+  background: var(--sky-50);
+  box-shadow: inset 0 0 0 1px var(--sky-200);
+  transition: opacity 0.15s ease;
 }
 .rec.dimmed {
-  opacity: 0.4;
-}
-.rec-no {
-  width: 1.3rem;
-  height: 1.3rem;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.75rem;
-  font-weight: 700;
+  opacity: 0.42;
 }
 .combo {
   display: flex;
   align-items: center;
-  gap: 0.2rem;
-  flex-wrap: wrap;
+  gap: 4px;
+}
+.plus {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--ink-2);
 }
 .mini {
-  min-width: 1.7rem;
-  height: 1.5rem;
-  border-radius: 5px;
-  font-size: 0.8rem;
+  flex: none;
+  width: clamp(28px, 8.4vw, 34px);
+  height: clamp(28px, 8.4vw, 34px);
+  border-radius: 50%;
+  font-size: 0.875rem;
   font-weight: 700;
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
-  border: 1px solid #fff;
+  background: var(--sky);
+  color: var(--navy);
+  transition: background-color 0.1s ease, color 0.1s ease;
 }
 .mini.on {
   background: var(--navy);
-}
-.arrow {
-  font-size: 0.7rem;
-  opacity: 0.7;
-}
-.empty {
-  padding: 2rem 0;
+  color: var(--white);
 }
 </style>

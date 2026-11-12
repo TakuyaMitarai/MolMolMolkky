@@ -2,7 +2,7 @@
 // Functions take a `game` object and return a NEW game (immutable style);
 // callers replace their reactive state with the result.
 
-import { createTurnRecord, deepClone } from './models.js'
+import { createGameRecord, createTurnRecord, deepClone } from './models.js'
 
 const TARGET = 50
 
@@ -314,6 +314,28 @@ export function resetForNextGame(inputGame, orderedTeams) {
   game.isFinished = false
   game.winner = null
   return game
+}
+
+/**
+ * Start a brand-new match with the SAME teams and players ("同じチームで得点を
+ * リセット"). Unlike resetForNextGame, nothing carries over: per-game scores,
+ * past game results and cumulative totals are all cleared and gameNumber goes
+ * back to 1. Team/player identity (ids, names, linked users) is kept, and the
+ * caller may pass the teams in a new throwing order.
+ */
+export function resetWithSameTeams(inputGame, orderedTeams) {
+  const teams = deepClone(orderedTeams ?? inputGame.teams).map((team) => ({
+    ...team,
+    currentGameScore: 0,
+    turnHistory: [],
+    missCount: 0,
+    currentPlayerIndex: 0,
+    gameResults: [],
+    cumulativeScore: 0,
+    isEliminated: false,
+    selectedSkittles: [],
+  }))
+  return createGameRecord(teams)
 }
 
 /**

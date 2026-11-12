@@ -3,6 +3,9 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '../stores/dataStore'
 import { createThrowRecord } from '../lib/models.js'
+import AppIcon from '../components/AppIcon.vue'
+import PageHeader from '../components/PageHeader.vue'
+import DistancePicker from '../components/DistancePicker.vue'
 
 const router = useRouter()
 const store = useDataStore()
@@ -45,7 +48,7 @@ function addRecord() {
     notes: null,
   })
   store.addThrowRecord(user, record)
-  message.value = '記録を追加しました'
+  message.value = `${user.name}の記録を追加しました（${user.throwRecords.length}件目）`
   if (isGasha.value) score.value = 1
   else isSuccessful.value = true
 }
@@ -55,152 +58,178 @@ function deleteRecord(record) {
   if (!user) return
   const updated = { ...user, throwRecords: user.throwRecords.filter((r) => r.id !== record.id) }
   store.updateUser(updated)
+  message.value = ''
 }
 
-function icon(name) {
-  return { 横投げ: '↔️', 縦投げ: '↕️', バック: '🔄', ガシャ: '💥' }[name] ?? '🎯'
-}
 function fmt(iso) {
   return new Date(iso).toLocaleString('ja-JP', { dateStyle: 'short', timeStyle: 'short' })
+}
+// What the record says, in one line.
+function summary(r) {
+  if (r.throwTypeName === 'ガシャ') return `${r.score}本`
+  return `${r.distance}m　${r.isSuccessful ? '成功' : '失敗'}　${r.score}点`
 }
 </script>
 
 <template>
   <div class="page">
-    <div class="navbar">
-      <span class="spacer" />
-      <button class="btn-inline" @click="router.push({ name: 'home' })">完了</button>
-    </div>
-    <h1 class="page-title">投擲記録</h1>
+    <PageHeader
+      title="投擲記録"
+      sub="練習の1投を統計に残します"
+      backLabel="ホームに戻る"
+      @back="router.push({ name: 'home' })"
+    />
 
-    <div class="page-scroll pad col">
-      <h2 class="section-title">プレイヤー</h2>
-      <div class="scroll-x">
-        <div class="chip-row">
-          <button
-            v-for="u in store.users"
-            :key="u.id"
-            :class="['chip', { selected: selectedUserId === u.id }]"
-            @click="selectedUserId = u.id"
-          >
-            {{ u.name }}
-          </button>
-          <span v-if="!store.users.length" class="muted">ユーザーを登録してください</span>
-        </div>
+    <div class="page-body">
+      <div v-if="!store.users.length" class="empty">
+        <strong>まだプレイヤーが登録されていません</strong>
+        ホームの「プレイヤー登録」で追加すると、ここで記録できます。
       </div>
 
-      <h2 class="section-title">投げ方</h2>
-      <div class="scroll-x">
-        <div class="chip-row">
-          <button
-            v-for="t in store.throwTypes"
-            :key="t.id"
-            :class="['chip', { selected: throwTypeName === t.name }]"
-            @click="selectType(t.name)"
-          >
-            {{ t.name }}
-          </button>
-        </div>
-      </div>
-
-      <template v-if="isGasha">
-        <h2 class="section-title">得点（ピン数）</h2>
-        <div class="score-grid">
-          <button
-            v-for="n in 13"
-            :key="n - 1"
-            :class="['chip', { selected: score === n - 1 }]"
-            @click="score = n - 1"
-          >
-            {{ n - 1 }}
-          </button>
-        </div>
-      </template>
       <template v-else>
-        <h2 class="section-title">結果</h2>
-        <div class="row">
-          <button :class="['chip', { selected: isSuccessful }]" @click="isSuccessful = true">成功</button>
-          <button :class="['chip', { selected: !isSuccessful }]" @click="isSuccessful = false">失敗</button>
-        </div>
-        <h2 class="section-title">距離</h2>
-        <div class="slider-row">
-          <span class="muted">4m</span>
-          <input type="range" min="4" max="12" step="1" v-model.number="distance" />
-          <span class="muted">12m</span>
-        </div>
-        <p class="center big">{{ distance }}m</p>
-      </template>
-
-      <div v-if="history.length" class="card">
-        <h2 class="section-title">投擲履歴</h2>
-        <div v-for="r in history" :key="r.id" class="hist-item">
-          <span class="ico">{{ icon(r.throwTypeName) }}</span>
-          <div class="hd">
-            <div>{{ r.throwTypeName }} ・ 得点 {{ r.score }}</div>
-            <div class="muted small" v-if="r.throwTypeName !== 'ガシャ'">
-              距離 {{ r.distance }}m ・ {{ r.isSuccessful ? '成功' : '失敗' }}
-            </div>
-            <div class="muted small">{{ fmt(r.date) }}</div>
+        <section class="group">
+          <h2 class="label">プレイヤー</h2>
+          <div class="chips" role="radiogroup" aria-label="プレイヤー">
+            <button
+              v-for="u in store.users"
+              :key="u.id"
+              type="button"
+              role="radio"
+              :aria-checked="selectedUserId === u.id"
+              :class="['chip', { selected: selectedUserId === u.id }]"
+              @click="selectedUserId = u.id"
+            >
+              {{ u.name }}
+            </button>
           </div>
-          <button class="trash" @click="deleteRecord(r)">🗑️</button>
-        </div>
-      </div>
+        </section>
+
+        <section class="group">
+          <h2 class="label">投げ方</h2>
+          <div class="chips" role="radiogroup" aria-label="投げ方">
+            <button
+              v-for="t in store.throwTypes"
+              :key="t.id"
+              type="button"
+              role="radio"
+              :aria-checked="throwTypeName === t.name"
+              :class="['chip', { selected: throwTypeName === t.name }]"
+              @click="selectType(t.name)"
+            >
+              {{ t.name }}
+            </button>
+          </div>
+        </section>
+
+        <section v-if="isGasha" class="group">
+          <h2 class="label">倒したピン数</h2>
+          <div class="pin-grid" role="radiogroup" aria-label="倒したピン数">
+            <button
+              v-for="n in 12"
+              :key="n"
+              type="button"
+              role="radio"
+              :aria-checked="score === n"
+              :class="['pin-key', 'pick', { selected: score === n }]"
+              @click="score = n"
+            >
+              {{ n }}
+            </button>
+          </div>
+          <button
+            type="button"
+            role="radio"
+            :aria-checked="score === 0"
+            :class="['chip', 'zero-chip', { selected: score === 0 }]"
+            @click="score = 0"
+          >
+            0本（1本も倒れなかった）
+          </button>
+        </section>
+
+        <template v-else>
+          <section class="group">
+            <h2 class="label">結果</h2>
+            <div class="seg" role="radiogroup" aria-label="結果">
+              <button
+                type="button"
+                role="radio"
+                :aria-checked="isSuccessful"
+                :class="['seg-btn', { on: isSuccessful }]"
+                @click="isSuccessful = true"
+              >
+                成功
+              </button>
+              <button
+                type="button"
+                role="radio"
+                :aria-checked="!isSuccessful"
+                :class="['seg-btn', { on: !isSuccessful }]"
+                @click="isSuccessful = false"
+              >
+                失敗
+              </button>
+            </div>
+          </section>
+          <DistancePicker v-model="distance" />
+        </template>
+
+        <section v-if="history.length" class="group">
+          <h2 class="label">{{ selectedUser?.name }}の最近の記録（新しい順・10件まで）</h2>
+          <ul class="card history">
+            <li v-for="r in history" :key="r.id" class="hist-item">
+              <div class="hd">
+                <div class="hd-main num"><strong>{{ r.throwTypeName }}</strong>{{ summary(r) }}</div>
+                <div class="hd-sub num">{{ fmt(r.date) }}</div>
+              </div>
+              <button class="icon-btn" :aria-label="`${fmt(r.date)}の記録を削除`" @click="deleteRecord(r)">
+                <AppIcon name="trash" :size="20" />
+              </button>
+            </li>
+          </ul>
+        </section>
+      </template>
     </div>
 
-    <div class="pad footer">
-      <p v-if="message" class="center muted">{{ message }}</p>
-      <button class="btn btn-primary" @click="addRecord">記録を追加</button>
+    <div v-if="store.users.length" class="page-foot">
+      <p v-if="message" class="notice" role="status">{{ message }}</p>
+      <button class="btn btn-primary" @click="addRecord">この内容で記録する</button>
     </div>
   </div>
 </template>
 
 <style scoped>
-.chip-row {
-  display: flex;
-  gap: 0.5rem;
-  padding-bottom: 0.25rem;
+.zero-chip {
+  width: 100%;
 }
-.chip-row .chip {
-  white-space: nowrap;
-  width: auto;
-}
-.score-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 0.4rem;
-}
-.slider-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-.slider-row input {
-  flex: 1;
-}
-.big {
-  font-size: 1.4rem;
-  font-weight: 700;
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 4px 6px 4px 14px;
 }
 .hist-item {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.5rem 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 8px;
+  padding: 6px 0;
 }
-.ico {
-  font-size: 1.3rem;
+.hist-item + .hist-item {
+  border-top: 1px solid var(--line);
 }
 .hd {
   flex: 1;
+  min-width: 0;
 }
-.small {
+.hd-main {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.hd-main strong {
+  font-weight: 700;
+  margin-right: 10px;
+}
+.hd-sub {
   font-size: 0.75rem;
-}
-.trash {
-  font-size: 1.1rem;
-}
-.footer {
-  padding-bottom: 1.5rem;
+  color: var(--ink-2);
 }
 </style>

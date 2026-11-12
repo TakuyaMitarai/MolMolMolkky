@@ -1,69 +1,97 @@
 <script setup>
-const props = defineProps({
+import { teamLabel } from '../lib/teamLabel.js'
+import AppIcon from './AppIcon.vue'
+import BottomSheet from './BottomSheet.vue'
+
+defineProps({
   team: { type: Object, required: true },
   currentPlayerIndex: { type: Number, required: true },
 })
 const emit = defineEmits(['select', 'close'])
-
-function teamLabel(team) {
-  const names = (team.players || []).map((p) => p.user?.name).filter(Boolean)
-  return names.length ? names.join(' & ') : team.name
-}
 </script>
 
 <template>
-  <div class="overlay" @click.self="emit('close')">
-    <div class="sheet page">
-      <div class="navbar">
-        <span class="spacer" />
-        <button class="btn-inline" @click="emit('close')">✕</button>
-      </div>
-      <h1 class="page-title">👥 {{ teamLabel(team) }}</h1>
-      <h2 class="section-title">プレイヤー選択</h2>
-
-      <div class="pad col">
-        <button
-          v-for="(p, i) in team.players"
-          :key="p.id"
-          :class="['select-row', { current: i === currentPlayerIndex }]"
-          @click="emit('select', i)"
-        >
-          <div class="info">
-            <div class="name">{{ p.name }}</div>
-            <div class="sub">{{ p.user ? '登録済み: ' + p.user.name : '未登録' }}</div>
-          </div>
-          <span v-if="i === currentPlayerIndex" class="check">✓</span>
-        </button>
-      </div>
+  <BottomSheet title="投げる人を選ぶ" :sub="`チーム: ${teamLabel(team)}`" @close="emit('close')">
+    <div class="list" role="radiogroup" aria-label="投げる人">
+      <button
+        v-for="(p, i) in team.players"
+        :key="p.id"
+        type="button"
+        role="radio"
+        :aria-checked="i === currentPlayerIndex"
+        :class="['select-row', { current: i === currentPlayerIndex }]"
+        @click="emit('select', i)"
+      >
+        <span class="avatar" aria-hidden="true">{{ p.name.slice(0, 1) }}</span>
+        <span class="info">
+          <span class="name ellipsis">{{ p.name }}</span>
+          <span class="sub">{{ p.user ? '登録プレイヤー' : 'ゲスト' }}</span>
+        </span>
+        <span v-if="i === currentPlayerIndex" class="check"><AppIcon name="check" :size="20" /></span>
+      </button>
     </div>
-  </div>
+  </BottomSheet>
 </template>
 
 <style scoped>
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .select-row {
   display: flex;
   align-items: center;
-  padding: 0.9rem 1rem;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px 14px 10px 12px;
+  border-radius: 16px;
+  background: var(--white);
+  box-shadow: inset 0 0 0 1.5px var(--line-strong);
   text-align: left;
+  transition: transform 0.08s ease, background-color 0.12s ease;
+}
+.select-row:active {
+  transform: scale(0.98);
+  background: var(--sky-100);
 }
 .select-row.current {
-  background: rgba(47, 168, 79, 0.25);
+  background: var(--sky-100);
+  box-shadow: inset 0 0 0 2px var(--navy);
 }
-.select-row .info {
-  flex: 1;
-}
-.select-row .name {
+.avatar {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sky);
   font-weight: 700;
 }
-.select-row .sub {
-  font-size: 0.8rem;
-  opacity: 0.7;
+.info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.name {
+  font-weight: 700;
+}
+.sub {
+  font-size: 0.75rem;
+  color: var(--ink-2);
 }
 .check {
-  color: var(--c-green);
-  font-size: 1.3rem;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--navy);
+  color: var(--white);
 }
 </style>

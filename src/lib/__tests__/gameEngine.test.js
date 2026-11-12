@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { recordScore, resetForNextGame, editTurn, undoLastThrow } from '../gameEngine.js'
+import {
+  recordScore,
+  resetForNextGame,
+  resetWithSameTeams,
+  editTurn,
+  undoLastThrow,
+} from '../gameEngine.js'
 import { createGameRecord, createTeam, createPlayer, createUser } from '../models.js'
 
 function twoTeamGame() {
@@ -178,5 +184,67 @@ describe('resetForNextGame', () => {
     expect(next.teams[0].currentGameScore).toBe(0)
     expect(next.teams[0].gameResults).toHaveLength(1)
     expect(next.isFinished).toBe(false)
+  })
+})
+
+describe('resetWithSameTeams', () => {
+  // play one full game so there is something to reset
+  function finishedGame() {
+    let g = twoTeamGame()
+    g.teams[0].currentGameScore = 44
+    g = recordScore(g, 0).game // A miss -> B
+    g = recordScore(g, 7).game // B: 7 -> A
+    g = recordScore(g, 6).game // A: 50, wins
+    return g
+  }
+
+  it('clears every score, result and cumulative total and restarts at game 1', () => {
+    let g = finishedGame()
+    // carry on into a second game so gameNumber and cumulative are non-trivial
+    g = resetForNextGame(g)
+    g = recordScore(g, 12).game
+    expect(g.gameNumber).toBe(2)
+    expect(g.teams[0].cumulativeScore).toBeGreaterThan(0)
+
+    const fresh = resetWithSameTeams(g)
+    expect(fresh.gameNumber).toBe(1)
+    expect(fresh.isFinished).toBe(false)
+    expect(fresh.winner).toBeNull()
+    expect(fresh.currentTeamIndex).toBe(0)
+    for (const team of fresh.teams) {
+      expect(team.currentGameScore).toBe(0)
+      expect(team.cumulativeScore).toBe(0)
+      expect(team.gameResults).toEqual([])
+      expect(team.turnHistory).toEqual([])
+      expect(team.missCount).toBe(0)
+      expect(team.isEliminated).toBe(false)
+      expect(team.currentPlayerIndex).toBe(0)
+    }
+  })
+
+  it('keeps the same teams and players, in the order that was chosen', () => {
+    const g = finishedGame()
+    const reordered = [g.teams[1], g.teams[0]]
+    const fresh = resetWithSameTeams(g, reordered)
+    expect(fresh.teams.map((t) => t.name)).toEqual(['B', 'A'])
+    expect(fresh.teams.map((t) => t.id)).toEqual([g.teams[1].id, g.teams[0].id])
+    expect(fresh.teams[0].players.map((p) => p.name)).toEqual(['b'])
+    expect(fresh.id).not.toBe(g.id) // it is a new match record
+  })
+
+  it('does not mutate the finished game (it can still be archived)', () => {
+    const g = finishedGame()
+    const before = JSON.stringify(g)
+    resetWithSameTeams(g, [g.teams[1], g.teams[0]])
+    expect(JSON.stringify(g)).toBe(before)
+  })
+
+  it('a reset match plays normally from the first throw', () => {
+    const fresh = resetWithSameTeams(finishedGame())
+    const { game } = recordScore(fresh, 5)
+    expect(game.teams[0].currentGameScore).toBe(5)
+    expect(game.teams[0].cumulativeScore).toBe(5)
+    expect(game.teams[0].turnHistory[0].seq).toBe(1)
+    expect(game.currentTeamIndex).toBe(1)
   })
 })
