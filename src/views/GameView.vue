@@ -46,6 +46,20 @@ const showEditModal = ref(false)
 const editTarget = ref(null) // { teamIndex, turnIndex }
 
 const boardMid = ref(null)
+
+// Score keys laid out like the skittles' starting formation (throwing line at
+// the bottom), the same arrangement as the home-screen emblem. Columns are half
+// a key wide so each row sits offset from the next, as in the real rack.
+const RACK = [
+  [7, 9, 8],
+  [5, 11, 12, 6],
+  [3, 10, 4],
+  [1, 2],
+]
+const rackKeys = RACK.flatMap((row, ri) => {
+  const start = 4 - row.length + 2 // first grid line; the outer 1fr columns are lines 1–2 and 10–11
+  return row.map((n, i) => ({ n, row: ri + 1, col: `${start + i * 2} / span 2` }))
+})
 const bodyEl = ref(null)
 const totalsEl = ref(null)
 
@@ -393,7 +407,6 @@ function openStats() {
       </section>
       <section v-else-if="currentPlayer && currentTeam" class="now">
         <div class="now-main">
-          <p class="now-label">投げる人</p>
           <p class="now-name ellipsis">{{ currentPlayer.name }}</p>
           <p v-if="currentTeam.players.length > 1" class="now-team ellipsis">チーム: {{ teamLabel(currentTeam) }}</p>
         </div>
@@ -419,13 +432,13 @@ function openStats() {
           :class="['total', { cur: isCurrentTeam(ti), out: team.isEliminated }]"
         >
           <h3 class="total-name ellipsis">{{ teamLabel(team) }}</h3>
-          <p class="total-score num">{{ team.cumulativeScore }}</p>
-          <p class="total-cap">累計</p>
+          <p class="total-score num">{{ team.currentGameScore }}</p>
+          <p class="total-cap">このゲーム</p>
           <p v-if="team.gameResults.length" class="total-history num">
             <span v-for="(gr, gi) in team.gameResults" :key="gi">{{ ordinal(gi + 1) }} {{ gr.finalScore }}</span>
           </p>
-          <p v-if="!game.isFinished" class="total-now num">
-            <span>このゲーム</span><b>{{ team.currentGameScore }}</b>
+          <p class="total-now num">
+            <span>累計</span><b>{{ team.cumulativeScore }}</b>
           </p>
           <div class="misses">
             <span v-if="team.isEliminated" class="tag solid">脱落</span>
@@ -495,7 +508,6 @@ function openStats() {
             </div>
           </div>
         </div>
-        <p class="board-hint">入力済みのマスをタップすると修正できます（×は失投）</p>
       </section>
     </div>
 
@@ -503,10 +515,17 @@ function openStats() {
     <div class="dock">
       <!-- score input -->
       <section v-if="!game.isFinished" class="pad" aria-label="得点入力">
-        <div class="pin-grid">
-          <button v-for="n in 12" :key="n" class="pin-key" :aria-label="`${n}点`" @click="pressScore(n)">{{ n }}</button>
-        </div>
-        <div class="pad-foot">
+        <div class="rack">
+          <button
+            v-for="k in rackKeys"
+            :key="k.n"
+            class="pin-key"
+            :style="{ gridRow: k.row, gridColumn: k.col }"
+            :aria-label="`${k.n}点`"
+            @click="pressScore(k.n)"
+          >
+            {{ k.n }}
+          </button>
           <label :class="['switch', { disabled: !currentPlayer?.user }]">
             <input
               v-model="showDetails"
@@ -518,7 +537,7 @@ function openStats() {
             <span class="track" aria-hidden="true"><span class="thumb" /></span>
             <span class="switch-text">
               <strong>投擲詳細</strong>
-              <small>{{ currentPlayer?.user ? '投げ方と距離も記録' : '登録プレイヤーのみ' }}</small>
+              <small>{{ currentPlayer?.user ? '投げ方と距離' : '登録者のみ' }}</small>
             </span>
           </label>
           <button class="miss-btn" @click="pressScore(0)">失投</button>
@@ -1058,12 +1077,6 @@ function openStats() {
   background: var(--navy);
   color: var(--white);
 }
-.board-hint {
-  margin-top: 4px;
-  padding-left: 6px;
-  font-size: 0.6875rem;
-  color: var(--ink-2);
-}
 
 /* ----- docked controls ----- */
 .dock {
@@ -1077,17 +1090,53 @@ function openStats() {
 }
 
 /* ----- score pad ----- */
-.pad-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 12px;
+/* The rack: 8 half-key columns between two flexible margins. Rows are packed
+   like circles (0.866 × pitch), so keys of neighbouring rows nest. The detail
+   switch and the miss button use the free corners beside the front row. */
+.rack {
+  --key: clamp(42px, min(14.5vw, 8.6dvh), 60px);
+  --gap: 8px;
+  display: grid;
+  grid-template-columns: 1fr repeat(8, calc((var(--key) + var(--gap)) / 2)) 1fr;
+  grid-auto-rows: calc((var(--key) + var(--gap)) * 0.866);
+  padding-bottom: calc(var(--key) - (var(--key) + var(--gap)) * 0.866);
+  align-items: start;
+}
+.rack .pin-key {
+  justify-self: center;
+  width: var(--key);
+  height: var(--key);
+  aspect-ratio: auto;
+  border-radius: 50%;
+}
+.rack .switch {
+  grid-row: 4;
+  grid-column: 1 / 4;
+  justify-self: start;
+  align-self: start;
+  height: var(--key);
+  min-height: 0;
+}
+.rack .switch {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+}
+.rack .switch-text small {
+  display: none;
+}
+.rack .miss-btn {
+  grid-row: 4;
+  grid-column: 8 / 12;
+  justify-self: end;
+  align-self: start;
+  height: var(--key);
 }
 .miss-btn {
   flex: none;
-  width: 116px;
-  min-height: 48px;
+  width: min(100%, 104px);
+  min-height: 44px;
   border-radius: 999px;
   font-size: 1rem;
   font-weight: 700;
@@ -1246,35 +1295,15 @@ function openStats() {
   .dock {
     padding-top: 10px;
   }
-  .pad-foot {
-    margin-top: 8px;
-  }
 }
 /* small phones in a browser (about 550–620px of height): slightly flatter
    keys and menu, and no tip line, so two teams fit without scrolling */
 @media (max-height: 620px) {
-  .board-hint {
-    display: none;
-  }
   .board-card {
     padding-bottom: 8px;
   }
   .dock {
     padding-bottom: 8px;
-  }
-  .dock .pin-grid {
-    gap: 6px 8px;
-  }
-  .dock .pin-key {
-    aspect-ratio: auto;
-    height: 44px;
-    border-radius: 22px;
-  }
-  .miss-btn {
-    min-height: 44px;
-  }
-  .switch {
-    min-height: 44px;
   }
   .actions {
     padding-top: 2px;
