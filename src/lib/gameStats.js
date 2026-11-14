@@ -46,10 +46,10 @@ export function summarizeRecords(records, typeOrder = []) {
       const total = rs.length
       if (name === GASHA) {
         const pins = rs.reduce((sum, r) => sum + (Number(r.score) || 0), 0)
-        return { name, isGasha: true, total, avgPins: Math.round((pins / total) * 10) / 10 }
+        return { name, isGasha: true, total, avgPins: Math.round((pins / total) * 10) / 10, records: rs }
       }
       const success = rs.filter((r) => r.isSuccessful).length
-      return { name, isGasha: false, total, success, rate: pct(success, total) }
+      return { name, isGasha: false, total, success, rate: pct(success, total), records: rs }
     })
   const rated = records.filter((r) => r.throwTypeName !== GASHA)
   const success = rated.filter((r) => r.isSuccessful).length
