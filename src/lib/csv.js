@@ -1,5 +1,7 @@
 // Single-CSV serialization for users + their throw records (RFC4180-ish).
-// Columns: name,registrationDate,recordDate,throwTypeName,distance,score,isSuccessful,notes
+// Columns: name,registrationDate,recordDate,throwTypeName,distance,score,isSuccessful,notes,
+//          matchId,matchDate,gameNumber (the last three are empty for practice records
+//          and absent in files written before they existed)
 // A user with no throws is written as one row with empty recordDate onward,
 // so registered-but-unused players survive an export/import round-trip.
 
@@ -14,6 +16,9 @@ const HEADER = [
   'score',
   'isSuccessful',
   'notes',
+  'matchId',
+  'matchDate',
+  'gameNumber',
 ]
 
 function escapeField(value) {
@@ -29,7 +34,7 @@ export function serializeCsv(users) {
   for (const user of users) {
     if (user.throwRecords.length === 0) {
       lines.push(
-        [escapeField(user.name), escapeField(user.registrationDate), '', '', '', '', '', ''].join(',')
+        [escapeField(user.name), escapeField(user.registrationDate), '', '', '', '', '', '', '', '', ''].join(',')
       )
       continue
     }
@@ -44,6 +49,9 @@ export function serializeCsv(users) {
           escapeField(r.score),
           escapeField(r.isSuccessful),
           escapeField(r.notes),
+          escapeField(r.matchId),
+          escapeField(r.matchDate),
+          escapeField(r.gameNumber),
         ].join(',')
       )
     }
@@ -123,8 +131,19 @@ export function parseCsv(text) {
   const order = []
 
   for (let r = start; r < rows.length; r++) {
-    const [name, registrationDate, recordDate, throwTypeName, distance, score, isSuccessful, notes] =
-      rows[r]
+    const [
+      name,
+      registrationDate,
+      recordDate,
+      throwTypeName,
+      distance,
+      score,
+      isSuccessful,
+      notes,
+      matchId,
+      matchDate,
+      gameNumber,
+    ] = rows[r]
     const trimmedName = (name || '').trim()
     if (!trimmedName) continue
 
@@ -150,6 +169,9 @@ export function parseCsv(text) {
       score: score === '' || score == null ? 0 : Number(score),
       isSuccessful: String(isSuccessful).toLowerCase() !== 'false',
       notes: notes && notes.length ? notes : null,
+      matchId: matchId ? matchId : null,
+      matchDate: matchDate ? matchDate : null,
+      gameNumber: gameNumber ? Number(gameNumber) : null,
     })
   }
 

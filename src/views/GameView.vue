@@ -239,6 +239,7 @@ function applyThrow(score, details) {
   const player = currentPlayer.value
   const user = player?.user
   const throwingTeamIndex = game.value.currentTeamIndex
+  const gameTag = { matchId: game.value.id, matchDate: game.value.date, gameNumber: game.value.gameNumber }
   const { game: next, ended, eliminatedName } = engineRecord(game.value, score)
   game.value = next
 
@@ -251,6 +252,7 @@ function applyThrow(score, details) {
       score,
       isSuccessful: details.isSuccessful,
       notes: details.notes,
+      ...gameTag,
     })
     const lastTurn = next.teams[throwingTeamIndex].turnHistory.at(-1)
     if (lastTurn) {

@@ -29,6 +29,10 @@
 - **ターン↔統計の紐付け**: 詳細記録を保存した登録ユーザーの投擲は、`TurnRecord.throwRecordId` で
   対応する `User.throwRecords` のレコードと結び付く。編集時はそのレコードを上書き、Undo時は id 基準で削除し、
   統計レコードを持たない投擲（ゲスト・詳細スキップ）は誤って消さない。
+- **統計のゲーム別表示**: 対戦中に保存した `ThrowRecord` は `matchId` / `matchDate` / `gameNumber`
+  を持つ。統計画面は「これまでの統計」（従来の投げ方×距離）と「ゲームごとの成功率」の2タブ。
+  タグの無い古い記録は残っている `turnHistory` の `throwRecordId` から逆引きし、それでも不明なら
+  「ゲーム外の記録（練習など）」にまとめる（`lib/gameStats.js`）。
 - **投擲編集**: スコアボードの確定済みマスをタップ→編集モーダル（`editTurn`）。
   編集後は全チームを `turnHistory` から再計算し、ライブと**同じルール**で失投3連続＝脱落を判定。
   勝敗（50到達/最後の1チーム）も再評価し、勝ち投げを消せばゲームは未終了に戻る。
@@ -56,6 +60,7 @@ src/
     gameEngine.js         モルックのルール（純関数。recordScore / resetWithSameTeams など）
     teamLabel.js          チーム表示名（全プレイヤー名を & で連結）
     recommendations.js    スキットル推薦
+    gameStats.js          統計「ゲームごとの成功率」タブの集計（対戦→ゲーム別、ガシャは平均本数）
     csv.js                単一CSV の直列化/パース（RFC4180 風）
     persistence.js        localStorage load/save/clear
   views/                  画面（ルートに対応）
@@ -100,8 +105,10 @@ Swift は端末の Documents に JSON 保存していたが、GitHub Pages に�
      CSVに無い既存ユーザーは保持。上書きが必要なら `replaceFromCsv` を使う。
 
 ### CSV 仕様（範囲＝ユーザー＋投擲記録）
-ヘッダー: `name,registrationDate,recordDate,throwTypeName,distance,score,isSuccessful,notes`
+ヘッダー: `name,registrationDate,recordDate,throwTypeName,distance,score,isSuccessful,notes,matchId,matchDate,gameNumber`
 - 1行＝1投擲記録。
+- 末尾3列はその投擲のゲーム（`GameRecord.id` / `GameRecord.date` / 第Nゲーム）。練習の記録は空。
+  3列が無い古い CSV もそのまま読める。
 - 投擲ゼロの登録ユーザーは `recordDate` 以降が空の「ユーザーのみ行」で1行出力し、復元時も保持。
 - 日付は ISO 8601。カンマ/引用符/改行は RFC4180 風にクォートエスケープ。
 - `gameHistory` とカスタム投げ方は CSV 対象外（localStorage のみ）。

@@ -27,8 +27,13 @@ export function createThrowRecord({
   notes = null,
   date = nowIso(),
   id = uuid(),
+  // Which game the throw belongs to (null for practice records):
+  // matchId = GameRecord.id, matchDate = GameRecord.date, gameNumber = 第N ゲーム.
+  matchId = null,
+  matchDate = null,
+  gameNumber = null,
 }) {
-  return { id, date, throwTypeName, distance, score, isSuccessful, notes }
+  return { id, date, throwTypeName, distance, score, isSuccessful, notes, matchId, matchDate, gameNumber }
 }
 
 // ----- Throw types -----
