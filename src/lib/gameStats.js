@@ -1,4 +1,5 @@
-// Per-game statistics for one player ("ゲームごとの成功率" tab).
+// Per-match statistics for one player ("対戦ごとの成功率" tab). A match is one GameRecord:
+// all games of a series until the scores are reset or the match is ended.
 //
 // A throw record knows its game through matchId / matchDate / gameNumber
 // (set when it is saved during a game). Records saved before those fields

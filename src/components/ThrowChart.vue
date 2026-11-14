@@ -2,7 +2,7 @@
 // Charts for one set of records of one throw type: the pin-count histogram
 // for ガシャ, success rate by distance for everything else. Used by both
 // statistics tabs ("これまでの統計" and the expandable rows of
-// "ゲームごとの成功率"). `flat` drops the card frame when nested in a card.
+// "対戦ごとの成功率"). `flat` drops the card frame when nested in a card.
 import { computed } from 'vue'
 
 const props = defineProps({

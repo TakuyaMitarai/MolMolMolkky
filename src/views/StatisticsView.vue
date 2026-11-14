@@ -13,7 +13,7 @@ const store = useDataStore()
 const selectedUserId = ref(store.users[0]?.id ?? null)
 const throwTypeName = ref(store.throwTypes[0]?.name ?? '横投げ')
 const dateFilter = ref('all') // 'all' | 'today'
-const tab = ref('overall') // 'overall' = これまでの統計 | 'games' = ゲームごとの成功率
+const tab = ref('overall') // 'overall' = これまでの統計 | 'games' = 対戦ごとの成功率
 
 const selectedUser = computed(() => store.users.find((u) => u.id === selectedUserId.value) || null)
 
@@ -27,7 +27,7 @@ const filteredRecords = computed(() => {
   return records.filter((r) => r.throwTypeName === throwTypeName.value)
 })
 
-// ----- ゲームごとの成功率 -----
+// ----- 対戦ごとの成功率 -----
 const byGame = computed(() => {
   if (!selectedUser.value) return { matches: [], other: null }
   const games = [store.currentGame, ...store.gameHistory].filter(Boolean)
@@ -52,9 +52,16 @@ function toggleOpen(scope, name) {
   openRows.value = next
 }
 
-function isLive(matchId, gameNumber) {
+function isLive(matchId) {
   const g = store.currentGame
-  return !!g && !g.isFinished && g.id === matchId && g.gameNumber === gameNumber
+  return !!g && g.id === matchId
+}
+// "第1〜3ゲーム（3ゲーム）" — which games of the match had recorded throws
+function gameRange(m) {
+  const nums = m.games.map((g) => g.gameNumber)
+  const lo = Math.min(...nums)
+  const hi = Math.max(...nums)
+  return lo === hi ? `第${lo}ゲーム` : `第${lo}〜${hi}ゲーム`
 }
 
 const WEEK = ['日', '月', '火', '水', '木', '金', '土']
@@ -101,7 +108,7 @@ function goBack() {
             :class="['seg-btn', { on: tab === 'games' }]"
             @click="tab = 'games'"
           >
-            ゲームごとの成功率
+            対戦ごとの成功率
           </button>
         </div>
 
@@ -151,63 +158,57 @@ function goBack() {
           上の名前をタップすると成績を表示します。
         </div>
 
-        <!-- ===== ゲームごとの成功率 ===== -->
+        <!-- ===== 対戦ごとの成功率 ===== -->
         <template v-else-if="tab === 'games'">
           <div v-if="!hasGameData" class="empty">
             <strong>{{ selectedUser.name }}さんの記録はまだありません</strong>
-            対戦中に「投擲詳細」をオンにして投げ方を記録すると、ゲームごとの成功率がここに出ます。
+            対戦中に「投擲詳細」をオンにして投げ方を記録すると、対戦ごとの成功率がここに出ます。
           </div>
 
           <template v-else>
             <p class="games-note">
-              成功率はガシャを除いた投擲で計算しています。ガシャは倒したピン数の平均です。投げ方をタップすると、そのゲームのグラフが開きます。
+              成功率はガシャを除いた投擲で計算しています。ガシャは倒したピン数の平均です。1つの対戦は、始めてから「同じチームで得点をリセット」やホームに戻るまでの全ゲームです。投げ方をタップするとグラフが開きます。
             </p>
 
-            <section v-for="m in byGame.matches" :key="m.matchId" class="match">
-              <header class="match-head">
-                <h3>{{ formatMatchDate(m.matchDate) }} からの対戦</h3>
-                <p class="num">
-                  {{ m.games.length }}ゲーム・{{ m.total }}投<template v-if="m.ratedTotal">・成功率 {{ m.rate }}%</template>
-                </p>
+            <article v-for="m in byGame.matches" :key="m.matchId" class="card game-card">
+              <header class="game-head">
+                <div class="game-title">
+                  <h4>{{ formatMatchDate(m.matchDate) }}〜</h4>
+                  <p class="game-sub num">
+                    {{ gameRange(m) }}
+                    <span v-if="isLive(m.matchId)" class="tag">対戦中</span>
+                  </p>
+                </div>
+                <div v-if="m.ratedTotal" class="game-rate">
+                  <b class="num">{{ m.rate }}<small>%</small></b>
+                  <span class="num">{{ m.ratedTotal }}投中 {{ m.success }}回成功</span>
+                </div>
+                <div v-else class="game-rate">
+                  <span class="num">{{ m.total }}投</span>
+                </div>
               </header>
-
-              <article v-for="g in m.games" :key="g.gameNumber" class="card game-card">
-                <header class="game-head">
-                  <div class="game-title">
-                    <h4>第{{ g.gameNumber }}ゲーム</h4>
-                    <span v-if="isLive(m.matchId, g.gameNumber)" class="tag">対戦中</span>
+              <ul class="type-rows">
+                <li v-for="t in m.types" :key="t.name" :class="['type-item', { open: isOpen(m.matchId, t.name) }]">
+                  <button
+                    type="button"
+                    class="type-row"
+                    :aria-expanded="isOpen(m.matchId, t.name)"
+                    @click="toggleOpen(m.matchId, t.name)"
+                  >
+                    <span class="type-name ellipsis">{{ t.name }}</span>
+                    <span :class="['type-bar', { gasha: t.isGasha }]" aria-hidden="true">
+                      <i :style="{ width: (t.isGasha ? (t.avgPins / 12) * 100 : t.rate) + '%' }" />
+                    </span>
+                    <span v-if="t.isGasha" class="type-val num">平均 {{ t.avgPins }}本<small>{{ t.total }}投</small></span>
+                    <span v-else class="type-val num">{{ t.rate }}%<small>{{ t.success }}/{{ t.total }}</small></span>
+                    <AppIcon class="type-chev" name="down" :size="16" />
+                  </button>
+                  <div v-if="isOpen(m.matchId, t.name)" class="type-chart">
+                    <ThrowChart :records="t.records" :throw-type-name="t.name" flat />
                   </div>
-                  <div v-if="g.ratedTotal" class="game-rate">
-                    <b class="num">{{ g.rate }}<small>%</small></b>
-                    <span class="num">{{ g.ratedTotal }}投中 {{ g.success }}回成功</span>
-                  </div>
-                  <div v-else class="game-rate">
-                    <span class="num">{{ g.total }}投</span>
-                  </div>
-                </header>
-                <ul class="type-rows">
-                  <li v-for="t in g.types" :key="t.name" :class="['type-item', { open: isOpen(`${m.matchId}|${g.gameNumber}`, t.name) }]">
-                    <button
-                      type="button"
-                      class="type-row"
-                      :aria-expanded="isOpen(`${m.matchId}|${g.gameNumber}`, t.name)"
-                      @click="toggleOpen(`${m.matchId}|${g.gameNumber}`, t.name)"
-                    >
-                      <span class="type-name ellipsis">{{ t.name }}</span>
-                      <span :class="['type-bar', { gasha: t.isGasha }]" aria-hidden="true">
-                        <i :style="{ width: (t.isGasha ? (t.avgPins / 12) * 100 : t.rate) + '%' }" />
-                      </span>
-                      <span v-if="t.isGasha" class="type-val num">平均 {{ t.avgPins }}本<small>{{ t.total }}投</small></span>
-                      <span v-else class="type-val num">{{ t.rate }}%<small>{{ t.success }}/{{ t.total }}</small></span>
-                      <AppIcon class="type-chev" name="down" :size="16" />
-                    </button>
-                    <div v-if="isOpen(`${m.matchId}|${g.gameNumber}`, t.name)" class="type-chart">
-                      <ThrowChart :records="t.records" :throw-type-name="t.name" flat />
-                    </div>
-                  </li>
-                </ul>
-              </article>
-            </section>
+                </li>
+              </ul>
+            </article>
 
             <section v-if="byGame.other" class="match">
               <header class="match-head">
@@ -279,7 +280,7 @@ function goBack() {
   white-space: nowrap;
 }
 
-/* ----- ゲームごとの成功率 ----- */
+/* ----- 対戦ごとの成功率 ----- */
 .games-note {
   font-size: 0.75rem;
   color: var(--ink-2);
@@ -299,7 +300,11 @@ function goBack() {
   color: var(--ink-2);
 }
 .game-card {
-  padding: 14px 14px 12px;
+  padding: 14px 14px 6px;
+}
+.game-card + .game-card,
+.game-card + .match {
+  margin-top: 4px;
 }
 .game-head {
   display: flex;
@@ -314,6 +319,18 @@ function goBack() {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.game-title {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.game-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--ink-2);
 }
 .game-title h4 {
   font-size: 1rem;

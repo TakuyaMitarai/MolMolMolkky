@@ -30,10 +30,12 @@
   対応する `User.throwRecords` のレコードと結び付く。編集時はそのレコードを上書き、Undo時は id 基準で削除し、
   統計レコードを持たない投擲（ゲスト・詳細スキップ）は誤って消さない。
 - **統計のゲーム別表示**: 対戦中に保存した `ThrowRecord` は `matchId` / `matchDate` / `gameNumber`
-  を持つ。統計画面は「これまでの統計」（従来の投げ方×距離）と「ゲームごとの成功率」の2タブ。
+  を持つ。統計画面は「これまでの統計」（従来の投げ方×距離）と「対戦ごとの成功率」の2タブ。
+  **対戦（match）＝ 1つの `GameRecord`**。連戦の第1〜Nゲームはまとめて1つ、「同じチームで得点をリセット」
+  やホームで終了すると別の対戦になる。
   タグの無い古い記録は残っている `turnHistory` の `throwRecordId` から逆引きし、それでも不明なら
   「ゲーム外の記録（練習など）」にまとめる（`lib/gameStats.js`）。
-  投げ方の行をタップすると、そのゲーム分の記録でいつもの棒グラフ（`components/ThrowChart.vue`、
+  投げ方の行をタップすると、その対戦分の記録でいつもの棒グラフ（`components/ThrowChart.vue`、
   「これまでの統計」と共通）が開閉する。
 - **投擲編集**: スコアボードの確定済みマスをタップ→編集モーダル（`editTurn`）。
   編集後は全チームを `turnHistory` から再計算し、ライブと**同じルール**で失投3連続＝脱落を判定。
@@ -62,7 +64,7 @@ src/
     gameEngine.js         モルックのルール（純関数。recordScore / resetWithSameTeams など）
     teamLabel.js          チーム表示名（全プレイヤー名を & で連結）
     recommendations.js    スキットル推薦
-    gameStats.js          統計「ゲームごとの成功率」タブの集計（対戦→ゲーム別、ガシャは平均本数）
+    gameStats.js          統計「対戦ごとの成功率」タブの集計（対戦単位、ガシャは平均本数）
     csv.js                単一CSV の直列化/パース（RFC4180 風）
     persistence.js        localStorage load/save/clear
   views/                  画面（ルートに対応）
